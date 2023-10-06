@@ -1,0 +1,27 @@
+#!/usr/bin/env csh
+
+#============================================================================#
+#               Job setup script for a Gaussian vortex
+#============================================================================#
+set datagen = "gauss"
+
+set pi=3.14159265358979323846
+
+# Data generation routine specific parameters:
+set rad=`echo "scale=12; 5 * $pi / 32" | bc -l`  # Mean radius of the vortex
+
+#==========================================================================
+
+echo -n ' We take q = 4*pi*exp(-0.5*(r/R)^2).  Enter R (default' $rad'): '
+set var=$<
+if ($var != "") set rad=$var
+
+echo '  Gaussian vortex with a PV distribution q = 4*pi*exp(-0.5*(r/R)^2)' >> job_info
+echo ' ' >> job_info
+echo '  Characteristic radius, R:          ' $rad >> job_info
+
+cat << /EOF > in_$datagen
+$rad
+/EOF
+
+$datagen < in_$datagen > out_$datagen

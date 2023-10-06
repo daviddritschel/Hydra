@@ -1,0 +1,43 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the random initial PV anomaly case
+#=========================================================================#
+set datagen = "randompv"
+
+# Default input parameters:
+set eps = "0.2"      # rms amplitude of PV anomaly relative to f_pole
+set k0 = "12"        # central wavenumber of spectrum
+set iseed = "55555"  # random seed
+#=========================================================================#
+
+echo ' The PV is set equal to f + a random field with variance'
+echo ' spectrum proportional to k^5*exp(-2k^2/k_0^2), with zero'
+echo ' global average and an rms value equal to vrms.'
+echo
+echo -n ' Enter the rms PV anomaly relative to f_pole (default' $eps'): '
+set var=$<
+if ($var != "") set eps=$var
+echo -n ' Enter k_0 (default' $k0'): '
+set var=$<
+if ($var != "") set k0=$var
+echo -n ' Enter a random seed (default' $iseed'): '
+set var=$<
+if ($var != "") set iseed=$var
+
+cat << /EOF > in_$datagen
+$eps
+$k0
+$iseed
+/EOF
+
+$datagen < in_$datagen > out_$datagen
+
+echo ' ' >> job_info
+echo ' The PV is set equal to f + a random field with variance' >> job_info
+echo ' spectrum proportional to k^5*exp(-2k^2/k_0^2), with zero' >> job_info
+echo ' global average and an rms value equal to vrms.' >> job_info
+echo ' ' >> job_info
+echo ' Initial rms PV anomaly/f_pole:      ' $eps >> job_info
+echo ' Central wavenumber of spectrum:     ' $k0 >> job_info
+echo ' Random number seed:                 ' $iseed >> job_info

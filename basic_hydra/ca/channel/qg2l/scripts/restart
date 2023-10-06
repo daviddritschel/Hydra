@@ -1,0 +1,258 @@
+#!/bin/csh
+
+#=========================================================================#
+#           Job restart script for the qg2l class of f90 codes.
+#=========================================================================#
+
+# This is run from the local job directory containing a simulation which
+# has already been performed or has terminated prematurely.
+
+echo
+echo ' Choose on of the following options:'
+echo '    (1) Continue a simulation from its current state, or '
+echo '    (2) Create a new simulation initialised from a chosen time.'
+echo -n ' Option (default: 1)? '
+set opt=$<
+if ($opt == "") set opt="1"
+
+#-----------------------------------------------------------------------------------------------
+# Work out the maximum time loop:
+set dum=`ls cont/qqnodes??? | wc`
+set loopinit=$dum[1]
+
+# See what the variable loopinit contains in parameters.f90:
+set dum = `grep loopinit src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set loopinit_ori = $dum[1]
+
+# Work out the total simulation time:
+set dum = `grep tsim src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set tsim_ori = $dum[1]
+
+# Maximum simulation time specified in old simulation:
+echo -n ' Final time of the simulation (default' $tsim_ori')? '
+set tsim=$<
+if ($tsim == "") set tsim=$tsim_ori
+
+# Time interval between contour saves:
+set dum = `grep tcsave src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set tcsave_ori = $dum[1]
+
+#$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+if ($opt == "1") then
+    # Continuation run in the same directory:
+   set t=`echo "$tcsave_ori * $loopinit" | bc -l`
+
+    # Create a job information summary file:
+   touch new_job_info
+   echo ' Job created at                      ' `date` >> new_job_info
+   echo ' on                                  ' $host >> new_job_info
+   echo ' ' >> new_job_info
+
+   echo ' Simulation continues from time t =  ' $t >> new_job_info
+   echo ' Total simulation time:              ' $tsim >> new_job_info
+   echo ' ' >> new_job_info
+
+    # Modify parameter file in src subdirectory:
+   cd src
+   sed s/loopinit=$loopinit_ori/loopinit=$loopinit/ parameters.f90 > junk
+   mv junk parameters.f90
+   sed s/tsim=$tsim_ori/tsim=$tsim/ parameters.f90 > junk
+   mv junk parameters.f90
+   sed s/replace=.true./replace=.false./ parameters.f90 > junk
+   mv junk parameters.f90
+
+    # Compile all codes and move sources to sub-directory:
+   make casl proxy_post_all install clean
+   cd ..
+
+    # Launch job:
+   echo
+   echo ' *** Launching job in the background ...'
+   bjob log{$loopinit} casl
+   echo
+   echo '     To see the output log file, type '
+   echo ' tailf log'{$loopinit}
+
+else
+#$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+    # New run, starting from a time in the old simulation;
+
+   echo -n ' Time loop from which to restart (default and maximum:' $loopinit')? '
+   set var=$<
+   if ($var != "") set loopinit=$var
+    # Allow changes in various other parameters:
+
+    # create a new subdirectory to contain initial data only:
+   set t=`echo "$tcsave_ori * $loopinit" | bc -l`
+   set basejobdir="time"{$t}
+
+    # work out the last run which has been performed:
+    # First make a bogus empty directory so this works!
+   mkdir {$basejobdir}r000
+   set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+   rmdir {$basejobdir}r000
+
+   @ next_run = ( $last_run + 1 )
+   @ p1 = ( $next_run / 100 )
+   @ jr = ( $next_run - ( 100 * $p1 ) )
+   @ p2 = ( $jr / 10 )
+   @ p3 = ( $jr - ( 10 * $p2 ) )
+   set pind={$p1}{$p2}{$p3}
+
+   set jobdir={$basejobdir}r{$pind}
+
+   mkdir $jobdir
+   /bin/cp -r src $jobdir
+   /bin/cp job_info $jobdir/ori_job_info
+   if (-e disp1eq.r8) /bin/cp disp1eq.r8 $jobdir
+   if (-e disp2eq.r8) /bin/cp disp2eq.r8 $jobdir
+   if (-e topo.r8) /bin/cp topo.r8 $jobdir
+   /bin/cp ene.asc $jobdir
+   /bin/cp sv $jobdir
+   /bin/cp zsv $jobdir
+   /bin/cp zv $jobdir
+   /bin/cp yeqv $jobdir
+   /bin/cp restart $jobdir
+
+   cd $jobdir
+   mkdir cont
+   mkdir fine
+
+    # Copy initial contour data files needed for restart:
+   @ p1 = ( $loopinit / 100 )
+   @ jr = ( $loopinit - ( 100 * $p1 ) )
+   @ p2 = ( $jr / 10 )
+   @ p3 = ( $jr - ( 10 * $p2 ) )
+   set pind={$p1}{$p2}{$p3}
+   /bin/cp ../cont/qqsynopsis.asc cont/restart-qqsynopsis.asc
+   /bin/cp ../cont/qqindex{$pind} cont/restart-qqindex{$pind}
+   /bin/cp ../cont/qqnodes{$pind} cont/restart-qqnodes{$pind}
+   /bin/cp ../cont/qqresi{$pind} cont/restart-qqresi{$pind}
+
+    # Create a job information summary file:
+   touch new_job_info
+   echo ' Job created at                      ' `date` >> new_job_info
+   echo ' on                                  ' $host >> new_job_info
+   echo ' ' >> new_job_info
+
+   echo ' Simulation continues from time t =  ' $t >> new_job_info
+   echo ' Total simulation time:              ' $tsim >> new_job_info
+   echo ' ' >> new_job_info
+
+   cd src
+    # Modify (local copy of) parameter file:
+   sed s/loopinit=$loopinit_ori/loopinit=$loopinit/ parameters.f90 > junk
+   mv junk parameters.f90
+   sed s/tsim=$tsim_ori/tsim=$tsim/ parameters.f90 > junk
+   mv junk parameters.f90
+   sed s/replace=.false./replace=.true./ parameters.f90 > junk
+   mv junk parameters.f90
+
+    # Time interval between field data saves:
+   set dum = `grep tgsave parameters.f90 | awk -F= '{print $(NF-1)}' | awk -F"d0" '{print $(NF-1)}'`
+   set tgsave_ori = $dum[1]
+   echo -n ' Time interval between field data saves (default:' $tgsave_ori')? '
+   set tgsave=$<
+   if ($tgsave == "") set tgsave=$tgsave_ori
+   sed s/tgsave=$tgsave_ori/tgsave=$tgsave/ parameters.f90 > junk
+   mv junk parameters.f90
+   echo ' Time interval between data saves:   ' $tgsave >> ../new_job_info
+
+    # Time interval between contour saves:
+   echo -n ' Time interval between contour data saves (default:' $tcsave_ori')? '
+   set tcsave=$<
+   if ($tcsave == "") set tcsave=$tcsave_ori
+   sed s/tcsave=$tcsave_ori/tcsave=$tcsave/ parameters.f90 > junk
+   mv junk parameters.f90
+   echo ' Time interval between contour saves:' $tcsave >> ../new_job_info
+
+    # Thermal damping in layer 1:
+   set dum = `grep rtherm1 parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+   set rtherm1_ori = $dum[1]
+   echo -n ' Thermal damping rate of lower layer thickness (default' $rtherm1_ori')? '
+   set rtherm1=$<
+   if ($rtherm1 == "") set rtherm1=$rtherm1_ori
+   sed s/rtherm1=$rtherm1_ori/rtherm1=$rtherm1/ parameters.f90 > junk
+   mv junk parameters.f90
+
+    # Thermal damping in layer 2:
+   set dum = `grep rtherm2 parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+   set rtherm2_ori = $dum[1]
+   set rtherm2=$rtherm1
+   echo -n ' Thermal damping rate of upper layer thickness (default' $rtherm2')? '
+   set var=$<
+   if ($var != "") set rtherm2=$var
+   sed s/rtherm2=$rtherm2_ori/rtherm2=$rtherm2/ parameters.f90 > junk
+   mv junk parameters.f90
+
+    # Ekman damping:
+   set dum = `grep rekman parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+   set rekman_ori = $dum[1]
+   echo -n ' Ekman damping rate (default:' $rekman_ori')? '
+   set rekman=$<
+   if ($rekman == "") set rekman=$rekman_ori
+   sed s/rekman=$rekman_ori/rekman=$rekman/ parameters.f90 > junk
+   mv junk parameters.f90
+
+   echo ' ' >> ../new_job_info
+   echo ' Lower layer thermal damping rate:   ' $rtherm1 >> ../new_job_info
+   echo ' Upper layer thermal damping rate:   ' $rtherm2 >> ../new_job_info
+   echo ' Ekman damping rate:                 ' $rekman >> ../new_job_info
+
+    # Enstrophy input rate:
+   set dum = `grep eirate parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+   set eirate_ori = $dum[1]
+   echo -n ' Enstrophy input rate, eta (default' $eirate_ori')? '
+   set eirate=$<
+   if ($eirate == "") set eirate=$eirate_ori
+   sed s/eirate=$eirate_ori/eirate=$eirate/ parameters.f90 > junk
+   mv junk parameters.f90
+
+    # Do something only if eirate is non-zero:
+   if (($eirate != "0") && ($eirate != "0.") && ($eirate != "0.0")) then
+      set dum = `grep vorvor parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+      set vorvor_ori = $dum[1]
+      echo -n ' Maximum vorticity of injected vortices (default' $vorvor_ori')? '
+      set vorvor=$<
+      if ($vorvor == "") set vorvor=$vorvor_ori
+      sed s/vorvor=$vorvor_ori/vorvor=$vorvor/ parameters.f90 > junk
+      mv junk parameters.f90
+
+      set dum = `grep rheton parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+      set rheton_ori = $dum[1]
+      echo -n ' Radius of vortices, R_heton (default' $rheton_ori')? '
+      set rheton=$<
+      if ($rheton == "") set rheton=$rheton_ori
+      sed s/rheton=$rheton_ori/rheton=$rheton/ parameters.f90 > junk
+      mv junk parameters.f90
+
+      echo ' ' >> ../new_job_info
+      echo ' Enstrophy input rate:               ' $eirate >> ../new_job_info
+      echo ' Vortex vorticity magnitude:         ' $vorvor >> ../new_job_info
+      echo ' Vortex radius:                      ' $rheton >> ../new_job_info
+   endif
+
+    # Compile all codes and move sources to sub-directory:
+   make casl proxy_post_all install clean
+   cd ..
+
+    # Launch job:
+   set datadir=`pwd`
+   echo
+   echo ' *** Launching job in the background in the directory'
+   echo ' ***' $datadir
+   bjob log{$loopinit} casl
+   echo
+   echo '     To see the output log file, type '
+   echo ' cd' $datadir
+   echo ' tailf log'{$loopinit}
+
+   echo ' ' >> new_job_info
+   echo ' Job directory:' >> new_job_info
+   echo $datadir >> new_job_info
+
+endif

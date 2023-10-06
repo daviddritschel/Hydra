@@ -1,0 +1,52 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the dam-break initial condition
+#=========================================================================#
+set datagen = "dam-break"
+
+# Set fixed constants:
+set pi=3.14159265358979
+set twopi=`echo "scale=10; 2 * $pi" | bc -l`
+
+#==========================================================================
+# Defaults:
+set width=1.0
+set height=0.5
+set trans=0.02
+set amp=0.0
+set seed=100
+
+echo ' We start with a slug of fluid of higher density.'
+echo -n ' Width of the higher density zone (default' $width')? '
+set var=$<
+if ($var != "") set width=$var
+echo -n ' Height of the higher density zone (default' $height')? '
+set var=$<
+if ($var != "") set height=$var
+echo -n ' Width of the density transition zone (default' $trans')? '
+set var=$<
+if ($var != "") set trans=$var
+echo -n ' Amplitude of initial random noise in vorticity (default' $amp')? '
+set var=$<
+if ($var != "") set amp=$var
+echo -n ' Integer seed for initial random noise in vorticity (default' $seed')? '
+set var=$<
+if ($var != "") set seed=$var
+
+echo ' ' >> job_info
+echo ' Dam wigth:                         ' $width >> job_info
+echo ' Dam height:                        ' $height >> job_info
+echo ' Dam density transition length:     ' $trans >> job_info
+echo ' Initial noise amplitude in zz:     ' $amp >> job_info
+echo ' Integer seed for noise in zz:      ' $seed >> job_info
+
+cat << /EOF > in_$datagen
+$width 
+$height
+$trans
+$amp
+$seed
+/EOF
+
+$datagen < in_$datagen > out_$datagen

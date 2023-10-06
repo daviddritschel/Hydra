@@ -1,0 +1,38 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the random initial height anomaly case
+#=========================================================================#
+set datagen = "adjust"
+
+# Default input parameters:
+set hmax = "0.25"    # max abs height anomaly
+set ksr = "20"       # central wavenumber of spectrum
+set iseed = "55555"  # random seed
+#=========================================================================#
+
+echo ' The height anomaly is set to a random field with variance'
+echo ' spectrum proportional to k^5*exp(-2k^2/ksr^2), with zero'
+echo ' global average and a max abs value equal to h_max.'
+echo
+echo -n ' Enter h_max (default' $hmax'): '
+set var=$<
+if ($var != "") set hmax=$var
+echo -n ' Enter ksr (default' $ksr'): '
+set var=$<
+if ($var != "") set ksr=$var
+echo -n ' Enter a random seed (default' $iseed'): '
+set var=$<
+if ($var != "") set iseed=$var
+
+cat << /EOF > in_$datagen
+$hmax
+$ksr
+$iseed
+/EOF
+
+$datagen < in_$datagen > out_$datagen
+
+echo ' Initial max abs height anomaly:     ' $hmax >> job_info
+echo ' Central wavenumber of spectrum:     ' $ksr >> job_info
+echo ' Random number seed:                 ' $iseed >> job_info

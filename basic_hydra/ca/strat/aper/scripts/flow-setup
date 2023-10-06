@@ -1,0 +1,377 @@
+#!/bin/csh
+
+#=========================================================================#
+#   Job setup script for the strat aper class of f90 codes.
+#   
+#=========================================================================#
+
+#==========================================================================
+
+echo
+echo '--------------------------------------------------------'
+echo '             The aperiodic stratified flow'
+echo '          Combined Lagrangian Advection Method'
+echo '--------------------------------------------------------'
+
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="strat"
+# Specify model equation type:
+set equa="aper"
+# Main code name:
+set algo="caps"
+
+#==========================================================================
+# The following is totally generic!
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set basedir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/hydra
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$basedir/hydra/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+#==========================================================================
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+echo
+echo ' *** Job will be built in the temporary directory '
+echo $tmpdir
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+echo ' ' >> job_info
+
+#==========================================================================
+# Get the data generation routine to be used:
+set dataopt="1"
+echo
+echo ' Choose one of the following flow initialisation methods:'
+echo    ' (1) a dam-break, or'
+echo -n ' (2) a stratified dam-break'
+echo -n ' (3) a vortex in a stratified domain'
+echo -n ' (4) a slug  -  (default' $dataopt')? '
+set var=$<
+if ($var != "") set dataopt=$var
+echo
+
+# Set defaults for each data generation type:
+if ($dataopt == "1") then 
+    # ==> Note here that the PV contrast across the jet = 4*pi here <==
+   set datagen = "dam-break"
+
+    # Physical parameters:
+   set xmin = "0.0"      # Domain min in x direction
+   set xmax = "8.0"      # Domain max in x direction
+   set ymin = "0.0"      # Domain min in y direction
+   set ymax = "1.0"      # Domain max in y direction
+   set themindeg = "0.0" # min tilt (for oscillating)
+   set themaxdeg = "0.0" # max tilt (for oscillating)
+   set theinideg = "0.0" # initial tilt
+   set omegag = "0.0"    # tilting frequency
+   set vs = "0.0"        # Settling velocity 
+
+    # Numerical parameters:
+   set nx = "1024"     # Inversion grid resolution in x
+   set ny = "128"      # Inversion grid resolution in y
+   set ncontz="50"     # Number of contours used to represent vorticity
+   set ncontb="100"    # Number of contours used to represent buoyancy
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="5.0"    # Contour data save time increment
+   set tsim="100.0"    # Total simulation time
+   set nnu="3"         # Hyperviscous power
+   set prediss="100.0" # Damping rate in highest waveno.
+
+
+else if ($dataopt == "2") then 
+    # ==> Note here that the PV contrast across the jet = 4*pi here <==
+   set datagen = "strat-dam"
+
+    # Physical parameters:
+   set xmin = "0.0"      # Domain min in x direction
+   set xmax = "8.0"      # Domain max in x direction
+   set ymin = "0.0"      # Domain min in y direction
+   set ymax = "1.0"      # Domain max in y direction
+   set themindeg = "0.0" # min tilt (for oscillating)
+   set themaxdeg = "0.0" # max tilt (for oscillating)
+   set theinideg = "0.0" # initial tilt
+   set omegag = "0.0"    # tilting frequency
+   set vs = "0.0"        # Settling velocity 
+
+    # Numerical parameters:
+   set nx = "1024"     # Inversion grid resolution in x
+   set ny = "128"      # Inversion grid resolution in y
+   set ncontz="50"     # Number of contours used to represent vorticity
+   set ncontb="100"    # Number of contours used to represent buoyancy
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="5.0"    # Contour data save time increment
+   set tsim="100.0"    # Total simulation time
+   set nnu="3"         # Hyperviscous power
+   set prediss="100.0" # Damping rate in highest waveno.
+
+else if ($dataopt == "3") then 
+    # ==> Note here that the PV contrast across the jet = 4*pi here <==
+   set datagen = "vort"
+
+    # Physical parameters:
+   set xmin = "0.0"      # Domain min in x direction
+   set xmax = "1.0"      # Domain max in x direction
+   set ymin = "0.0"      # Domain min in y direction
+   set ymax = "1.0"      # Domain max in y direction
+   set themindeg = "0.0" # min tilt (for oscillating)
+   set themaxdeg = "0.0" # max tilt (for oscillating)
+   set theinideg = "0.0" # initial tilt
+   set omegag = "0.0"    # tilting frequency
+   set vs = "0.0"        # Settling velocity 
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x
+   set ny = "256"      # Inversion grid resolution in y
+   set ncontz="50"     # Number of contours used to represent vorticity
+   set ncontb="100"    # Number of contours used to represent buoyancy
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="5.0"    # Contour data save time increment
+   set tsim="100.0"    # Total simulation time
+   set nnu="3"         # Hyperviscous power
+   set prediss="100.0" # Damping rate in highest waveno.
+else if ($dataopt == "4") then 
+    # ==> Note here that the PV contrast across the jet = 4*pi here <==
+   set datagen = "slug"
+
+    # Physical parameters:
+   set xmin = "0.0"      # Domain min in x direction
+   set xmax = "8.0"      # Domain max in x direction
+   set ymin = "0.0"      # Domain min in y direction
+   set ymax = "1.0"      # Domain max in y direction
+   set themindeg = "0.0" # min tilt (for oscillating)
+   set themaxdeg = "0.0" # max tilt (for oscillating)
+   set theinideg = "0.0" # initial tilt
+   set omegag = "0.0"    # tilting frequency
+   set vs = "0.0"        # Settling velocity 
+
+    # Numerical parameters:
+   set nx = "1024"     # Inversion grid resolution in x
+   set ny = "128"      # Inversion grid resolution in y
+   set ncontz="50"     # Number of contours used to represent vorticity
+   set ncontb="100"    # Number of contours used to represent buoyancy
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="5.0"    # Contour data save time increment
+   set tsim="100.0"    # Total simulation time
+   set nnu="3"         # Hyperviscous power
+   set prediss="100.0" # Damping rate in highest waveno.
+else 
+   echo ' Not a valid choice - exiting...'
+   /bin/rm -r $tmpdir  
+   exit(-1)
+endif
+
+#==========================================================================
+# Set fixed constants:
+set pi=3.14159265358979323846
+
+#==========================================================================
+# Choose main physical parameters:
+echo -n ' Domain minimum for x axis (default' $xmin')? '
+set var=$<
+if ($var != "") set xmin=$var
+echo ' xmin                         :     ' $xmin >> job_info
+echo -n ' Domain maximum for x axis (default' $xmax')? '
+set var=$<
+if ($var != "") set xmax=$var
+echo ' xmax                         :     ' $xmax >> job_info
+echo -n ' Domain minimum for y axis (default' $ymin')? '
+set var=$<
+if ($var != "") set ymin=$var
+echo ' ymin                         :     ' $ymin >> job_info
+echo -n ' Domain maximum for y axis (default' $ymax')? '
+set var=$<
+if ($var != "") set ymax=$var
+echo ' ymax                         :     ' $ymax >> job_info
+
+echo
+echo ' The domain oscillates back and forth with frequency'
+echo ' between the min and max specified tilt angles.'
+echo
+echo -n ' Frequency of oscillation: (default' $omegag')? ' 
+set var=$<
+if ($var != "") set omegag=$var
+echo ' omegag                       :     ' $omegag >> job_info
+
+echo -n ' Initial tilt angle (default' $theinideg')? '
+set var=$<
+if ($var != "") set theinideg=$var
+echo ' Initial tilt angle           :     ' $theinideg >> job_info
+
+echo -n ' Maximum tilt angle (default' $themaxdeg')? '
+set var=$<
+if ($var != "") set themaxdeg=$var
+echo ' Maximum tilt angle           :     ' $themaxdeg >> job_info
+
+echo -n ' Minimum tilt angle (default' $themindeg')? '
+set var=$<
+if ($var != "") set themindeg=$var
+echo ' Minimum tilt angle           :     ' $themindeg >> job_info
+
+echo
+echo ' The contours can have a uniform y velocity added'
+echo ' to simulate the effect of particles.'
+echo
+echo -n ' Settling velocity: (default' $vs')? ' 
+set var=$<
+if ($var != "") set vs=$var
+echo ' vs                           :     ' $vs >> job_info
+
+echo
+
+#==========================================================================
+# Choose numerical parameters:
+echo
+echo -n ' Grid resolution in x (default' $nx')? '
+set var=$<
+if ($var != "") set nx=$var
+echo ' Inversion grid resolution in x:     ' $nx >> job_info
+
+echo -n ' Grid resolution in y (default' $ny')? '
+set var=$<
+if ($var != "") set ny=$var
+echo ' Inversion grid resolution in y:     ' $ny >> job_info
+
+echo -n ' No. of Vorticity jumps to represent (default' $ncontz')? '
+set var=$<
+if ($var != "") set ncontz=$var
+echo ' Number of jumps to represent zz, ncontz:' $ncontz >> job_info
+
+echo -n ' No. of Buoyancy jumps to represent (default' $ncontb')? '
+set var=$<
+if ($var != "") set ncontb=$var
+echo ' Number of jumps to represent bb, ncontb:' $ncontb >> job_info
+
+echo
+echo -n ' Time interval between gridded data saves (default' $tgsave')? '
+set var=$<
+if ($var != "") set tgsave=$var
+echo ' Time interval between data saves:   ' $tgsave >> job_info
+
+echo -n ' Time interval between contour data saves (default' $tcsave')? '
+set var=$<
+if ($var != "") set tcsave=$var
+echo ' Time interval between contour saves:' $tcsave >> job_info
+
+echo -n ' Total simulation time (default' $tsim')? '
+set var=$<
+if ($var != "") set tsim=$var
+echo ' Total simulation time:              ' $tsim >> job_info
+echo ' ' >> job_info
+
+#============================================================
+# Build parameter file with cpp and make all codes:
+
+# Put all these dimensions into the dimens file needed for compilation:
+mkdir src
+cd src
+/bin/cp $srcdir/* .
+/bin/cp -r $hydradir/init .
+/bin/cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " -----------------------------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts1="-DN_X=$nx -DN_Y=$ny -DN_CONTZ=$ncontz -DN_CONTB=$ncontb -DT_SIM={$tsim}d0 -DT_GSAVE={$tgsave}d0 -DT_CSAVE={$tcsave}d0"
+set copts2="-DX_MIN={$xmin}d0 -DX_MAX={$xmax}d0 -DY_MIN={$ymin}d0 -DY_MAX={$ymax}d0 -DV_S={$vs}d0"
+set copts3="-DTH_INI={$theinideg}d0 -DTH_MIN={$themindeg}d0 -DTH_MAX={$themaxdeg}d0 -DOMEGA_G={$omegag}d0 -DN_NU={$nnu} -DPRE_DISS={$prediss}d0"
+set copts=`echo $copts1 $copts2 $copts3`
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+make $algo setup $datagen proxy_post_all install clean
+
+cd ..
+echo " -----------------------------------------------------------------------"
+echo 
+
+#============================================================
+# Execute the data generation script:
+$bindir/$datagen
+
+# Copy useful scripts to job directory:
+/bin/cp $bindir/spec_view.py .
+/bin/cp $bindir/eneplt.py .
+
+#==========================================================================
+# Create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Set the job directory name (will be appended by 001, 002 etc...):
+set basejobdir=nx{$nx}ny{$ny}
+echo
+echo -n ' Job directory name (default '{$basejobdir}')? '
+set var=$<
+if ($var != "") set basejobdir=$var
+
+# work out the last run which has been performed:
+# First make a bogus empty directory so this works!
+mkdir {$basejobdir}r000
+set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+rmdir {$basejobdir}r000
+
+@ next_run = ( $last_run + 1 )
+@ p1 = ( $next_run / 100 )
+@ jr = ( $next_run - ( 100 * $p1 ) )
+@ p2 = ( $jr / 10 )
+@ p3 = ( $jr - ( 10 * $p2 ) )
+set pind={$p1}{$p2}{$p3}
+
+set jobdir={$basejobdir}r{$pind}
+
+#=============================================================
+# Lastly move all data to desired job directory:
+
+# Move temporary directory to job directory:
+mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+echo ' ' >> job_info
+echo ' Job directory:' >> job_info
+echo $datadir >> job_info
+
+echo ' To set the job running, type'
+echo cd $datadir
+echo bat log caps
+echo

@@ -1,0 +1,604 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the planar qg class of f90 codes.
+#   
+#=========================================================================#
+
+#==========================================================================
+
+echo
+echo '--------------------------------------------------------'
+echo '   The doubly-periodic single-layer quasi-geostrophic'
+echo '          Combined Lagrangian Advection Method'
+echo '--------------------------------------------------------'
+
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="plane"
+# Specify model equation type:
+set equa="qg"
+
+# Ask for code version (typically OpenMP or not):
+echo
+echo ' Which version of the code should be used?'
+echo -n ' (1) CAPS, or (2) CASL - (default 1)? '
+set version=$<
+if ($version == "") set version="1"
+
+if ($version == "1") then
+   set algo="caps"
+else
+   set algo="casl"
+endif
+
+#==========================================================================
+# The following is totally generic!
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set workdir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $workdir)) mkdir $workdir
+set workdir=$workdir/hydra
+if (!(-d $workdir)) mkdir $workdir
+set basedir=$workdir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$workdir/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+#==========================================================================
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+echo
+echo ' *** Job will be built in the temporary directory '
+echo $tmpdir
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+echo ' ' >> job_info
+
+#==========================================================================
+# Set fixed constants:
+set pi=3.14159265358979323846
+
+#==========================================================================
+# Get the data generation routine to be used:
+set dataopt="6"
+echo
+echo ' Choose one of the following flow initialisation methods:'
+echo    ' (0) a random field with spectrum c k^{2p-3} * exp[-(p-1)*(k/k_0)^2],'
+echo    ' (1) a random field with a narrow-band spectrum of width dk centred on k_c,'
+echo    ' (2) a vortex strip having a parabolic cross-section,'
+echo    ' (3) an elliptical vortex,'
+echo    ' (4) a circular vortex in a PV staircase,'
+echo    ' (5) a dipole in beta,'
+echo    ' (6) a pure Rossby wave,'
+echo -n ' (7) a flow at rest subject to narrow-band spectral forcing  -  (default' $dataopt')? '
+set var=$<
+if ($var != "") set dataopt=$var
+echo
+
+# Set defaults for each data generation type:
+if ($dataopt == "0") then 
+    # ==> Note that the maximum PV is 4*pi here <==
+   set datagen = "ranpv"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "10.0"     # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "0.0"    # Planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="0.0"     # prefactor for energy input rate (narrow band)
+   set nfamp="0"       # exponent  for energy input rate    "     "
+   set kfmid="0"       # band centre
+   set fwid="0.0"      # band width
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="20.0"   # Contour data save time increment
+   set tsim="2000.0"   # Total simulation time
+
+else if ($dataopt == "1") then 
+    # ==> Note that the maximum PV is 4*pi here <==
+   set datagen = "narrow"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "10.0"     # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "0.0"    # Planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="-1.0"    # Needs to be -1 to avoid persistent forcing
+   set nfamp="0"       # 0 is sufficient
+   set kfmid="96"      # band centre
+   set fwid="4.0"      # band width
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="20.0"   # Contour data save time increment
+   set tsim="2000.0"   # Total simulation time
+
+else if ($dataopt == "2") then 
+    # ==> Note that the maximum PV is 4*pi here <==
+   set datagen = "vstrip"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "0.0"      # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "0.0"    # Planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="0.0"     # prefactor for energy input rate (narrow band)
+   set nfamp="0"       # exponent  for energy input rate    "     "
+   set kfmid="0"       # band centre
+   set fwid="0.0"      # band width
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="0.25"   # Grid data save time increment
+   set tcsave="2.5"    # Contour data save time increment
+   set tsim="25.0"     # Total simulation time
+
+else if ($dataopt == "3") then 
+    # ==> Note that the maximum PV is 4*pi here <==
+   set datagen = "ellipse"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "0.0"      # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "0.0"    # Planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="0.0"     # prefactor for energy input rate (narrow band)
+   set nfamp="0"       # exponent  for energy input rate    "     "
+   set kfmid="0"       # band centre
+   set fwid="0.0"      # band width
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="0.25"   # Grid data save time increment
+   set tcsave="2.5"    # Contour data save time increment
+   set tsim="25.0"     # Total simulation time
+
+else if ($dataopt == "4") then 
+   set datagen = "staircase"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "3.0"      # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "1.0"    # planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="0.0"     # prefactor for energy input rate (narrow band)
+   set nfamp="0"       # exponent  for energy input rate    "     "
+   set kfmid="0"       # band centre
+   set fwid="0.0"      # band width
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="2.0"    # Grid data save time increment
+   set tcsave="100.0"  # Contour data save time increment
+   set tsim="1000.0"   # Total simulation time
+
+else if ($dataopt == "5") then 
+    # ==> Note that the maximum PV is 4*pi here <==
+   set datagen = "dipole"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "20"     # Domain width  L_x divided by pi
+   set lydpi = "5"     # Domain height L_y divided by pi
+   set kd = "1.0"      # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "0.4"    # planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="0.0"     # prefactor for energy input rate (narrow band)
+   set nfamp="0"       # exponent  for energy input rate    "     "
+   set kfmid="0"       # band centre
+   set fwid="0.0"      # band width
+
+    # Numerical parameters:
+   set nx = "1024"     # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="5.0"    # Grid data save time increment
+   set tcsave="50.0"   # Contour data save time increment
+   set tsim="1000.0"   # Total simulation time
+
+else if ($dataopt == "6") then 
+    # ==> Note that the maximum PV is 4*pi here <==
+   set datagen = "rossby"
+
+    # Logical variables:
+   set damping = "n"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "0.0"      # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "1.0"    # planetary vorticity gradient
+   set rtherm="0.0"    # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="0.0"     # prefactor for energy input rate (narrow band)
+   set nfamp="0"       # exponent  for energy input rate    "     "
+   set kfmid="0"       # band centre
+   set fwid="0.0"      # band width
+
+    # Numerical parameters:
+   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="20.0"   # Contour data save time increment
+   set tsim="2000.0"   # Total simulation time
+
+else if ($dataopt == "7") then 
+    # This is for narrow-band spectral forcing starting from rest
+   set datagen = "rest"
+
+    # Logical variables:
+   set damping = "y"
+   set topogra = "n"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set kd = "24.0"     # Rossby deformation wavenumber (kd = 1/L_D)
+   set beta = "1.0"    # planetary vorticity gradient
+   set rtherm="0.001"  # Thermal damping/relaxation rate
+   set rekman="0.0"    # Ekman damping rate
+   set esr="0.0"       # Enstrophy injection rate
+   set vorvor="1.0"    # max vorticity/2*pi of the injected vortices
+   set ivor="0"        # Use 1 for vortex monopoles and 2 for vortex dipoles
+   set fbase="1.d-8"   # prefactor for energy input rate (narrow band)
+   set nfamp="4"       # exponent  for energy input rate    "     "
+   set kfmid="96"      # band centre
+   set fwid="4.0"      # band width
+
+    # Numerical parameters:
+   set nx = "512"      # Inversion grid resolution in x (east - west)
+   set nq="80"         # Number of contours used to represent PV
+   set tgsave="50.0"   # Grid data save time increment
+   set tcsave="500.0"  # Contour data save time increment
+   set tsim="10000.0"  # Total simulation time
+
+else 
+   echo ' Not a valid choice - exiting...'
+   /bin/rm -r $tmpdir  
+   exit(-1)
+endif
+
+#==========================================================================
+# Choose main physical parameters:
+echo
+echo ' We take the width of the domain (in x) to be '$lxdpi'*pi.'
+echo -n ' Width of the domain in y divided by pi, L_y/pi (default' $lydpi')? '
+set var=$<
+if ($var != "") set lydpi=$var
+set ellx=`echo "$lxdpi * $pi" | bc -l`
+set elly=`echo "$lydpi * $pi" | bc -l`
+set ymin=`echo "-$elly / 2" | bc -l`
+echo ' Width of the domain in x, L_x:      ' $lxdpi"*pi" >> job_info
+echo ' Width of the domain in y, L_y:      ' $lydpi"*pi" >> job_info
+
+echo
+echo -n ' Baroclinic Rossby deformation wavenumber, kd (default' $kd')? '
+set var=$<
+if ($var != "") set kd=$var
+echo ' Rossby def. wavenumber, k_D:        ' $kd >> job_info
+
+echo -n ' Planetary vorticity gradient, beta (default' $beta')? '
+set var=$<
+if ($var != "") set beta=$var
+echo ' Planetary vorticity gradient, beta: ' $beta >> job_info
+echo ' ' >> job_info
+
+#-------------------------------------------------------------------
+# Set thermal and Ekman damping:
+if ($damping == "y") then 
+   echo -n ' Thermal damping rate, r_th (default' $rtherm')? '
+   set var=$<
+   if ($var != "") set rtherm=$var
+
+   echo -n '  Ekman  damping rate, r_ek (default' $rekman')? '
+   set var=$<
+   if ($var != "") set rekman=$var
+   
+   echo ' ' >> job_info
+   echo ' Thermal damping rate:               ' $rtherm >> job_info
+   echo ' Ekman damping rate:                 ' $rekman >> job_info
+endif
+
+# Set topographical parameters:
+if ($topogra == "y") then 
+   echo
+   echo ' This option is not yet implemented!!!'
+endif
+
+#-------------------------------------------------------------------
+# Assign narrow-band spectrum initial conditions in case of option 1:
+if ($dataopt == "1") then
+   set kfmid="96"      # band centre
+   set fwid="4.0"      # band width
+
+   echo -n ' Band centre (default' $kfmid')? '
+   set var=$<
+   if ($var != "") set kfmid=$var
+
+   echo -n ' Band width (default' $fwid')? '
+   set var=$<
+   if ($var != "") set fwid=$var
+
+   echo ' ' >> job_info
+   echo ' Narrow-band spectrum initial conditions' >> job_info
+   echo ' Band centre:                        ' $kfmid >> job_info
+   echo ' Band width:                         ' $fwid >> job_info
+endif
+
+#-------------------------------------------------------------------
+# Assign spectral forcing in case of resting flow:
+if ($dataopt == "7") then
+   set fbase="1.d-8"   # prefactor for energy input rate (narrow band)
+   set nfamp="-10"     # exponent  for energy input rate    "     "
+   set kfmid="96"      # band centre
+   set fwid="4.0"      # band width
+
+   echo -n ' Prefactor for energy input rate (default' $fbase')? '
+   set var=$<
+   if ($var != "") set fbase=$var
+
+   echo -n ' Exponent for energy input rate (default' $nfamp')? '
+   set var=$<
+   if ($var != "") set nfamp=$var
+
+   echo -n ' Band centre (default' $kfmid')? '
+   set var=$<
+   if ($var != "") set kfmid=$var
+
+   echo -n ' Band width (default' $fwid')? '
+   set var=$<
+   if ($var != "") set fwid=$var
+
+   echo ' ' >> job_info
+   echo ' Prefactor for energy input rate:    ' $fbase >> job_info
+   echo ' Exponent  for energy input rate:    ' $nfamp >> job_info
+   echo ' Band centre:                        ' $kfmid >> job_info
+   echo ' Band width:                         ' $fwid >> job_info
+endif
+
+#==========================================================================
+# Choose numerical parameters:
+echo
+echo -n ' Grid resolution in x (default' $nx')? '
+set var=$<
+if ($var != "") set nx=$var
+echo ' Inversion grid resolution in x:     ' $nx >> job_info
+
+# Set y resolution so that dx = dy (as closely as possible):
+set fny=`echo "($nx*$lydpi)/$lxdpi + 0.5" | bc -l`
+set ny=${fny:r}
+echo -n ' Grid resolution in y (default' $ny')? '
+set var=$<
+if ($var != "") set ny=$var
+echo ' Inversion grid resolution in y:     ' $ny >> job_info
+
+echo -n ' No. of PV jumps to represent the PV variation (default' $nq')? '
+set var=$<
+if ($var != "") set nq=$var
+echo ' Number of jumps to represent PV, nq:' $nq >> job_info
+
+echo
+echo -n ' Time interval between gridded data saves (default' $tgsave')? '
+set var=$<
+if ($var != "") set tgsave=$var
+echo ' Time interval between data saves:   ' $tgsave >> job_info
+
+echo -n ' Time interval between contour data saves (default' $tcsave')? '
+set var=$<
+if ($var != "") set tcsave=$var
+echo ' Time interval between contour saves:' $tcsave >> job_info
+
+echo -n ' Total simulation time (default' $tsim')? '
+set var=$<
+if ($var != "") set tsim=$var
+echo ' Total simulation time:              ' $tsim >> job_info
+echo ' ' >> job_info
+
+if ($algo == "caps") then 
+
+  # Use default values for hyperviscosity (applied to residual PV only):
+  set nnu=3
+  set cdamp="2.0"
+
+  echo ' ' >> job_info
+  echo ' ***Lap^'{$nnu} 'Hyperdiffusion on PV     ' >> job_info
+  echo ' C*|zeta|_rms = damping rate for k = k_max/2   ' >> job_info
+  echo ' Damping coefficient, C:             ' $cdamp >> job_info
+endif
+
+#============================================================
+# Build parameter file with cpp and make all codes:
+
+# Put all these dimensions into the dimens file needed for compilation:
+mkdir src
+cd src
+cp $srcdir/* .
+cp -r $hydradir/init .
+cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " -----------------------------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts1="-DN_X=$nx -DN_Y=$ny -DN_CONTQ=$nq -DT_SIM={$tsim}d0 -DT_GSAVE={$tgsave}d0 -DT_CSAVE={$tcsave}d0"
+set copts2="-DL_X={$ellx}d0 -DL_Y={$elly}d0 -DK_D={$kd}d0 -DPV_GRAD={$beta}d0"
+set copts3="-DR_THERM={$rtherm}d0 -DR_EKMAN={$rekman}d0 -DE_SR={$esr}d0 -DVOR_VOR={$vorvor}d0 -DI_VOR={$ivor} -DI_SEED={$iseed}"
+set copts4="-DF_BASE=$fbase -DF_WID={$fwid}d0 -DKF_MID=$kfmid -DNF_AMP=$nfamp"
+
+if  ($algo == "caps") then 
+  set copts5="-DC_DAMP={$cdamp}d0 -DPOW_HYPER=$nnu"
+  set copts=`echo $copts1 $copts2 $copts3 $copts4 $copts5`
+else
+  set copts=`echo $copts1 $copts2 $copts3 $copts4`
+endif 
+
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+if ($beta == "0.0") then
+   # No beta effect; use congen.f90 in the compilation:
+   make $algo setup $datagen proxy_post_all install clean
+else
+   # beta .ne. 0; use econgen.f90:
+   make e{$algo} setup $datagen proxy_post_all install clean
+endif
+
+cd ..
+echo " -----------------------------------------------------------------------"
+echo 
+
+#============================================================
+# Execute the data generation script:
+$bindir/$datagen
+
+#==========================================================================
+# Create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Set the job directory name (will be appended by 001, 002 etc...):
+set basejobdir=nx{$nx}
+if ($ny     !=   $nx) set basejobdir={$basejobdir}ny{$ny}
+if ($kd     != "0.0") set basejobdir={$basejobdir}kd{$kd}
+if ($beta   != "0.0") set basejobdir={$basejobdir}beta{$beta}
+if ($rtherm != "0.0") set basejobdir={$basejobdir}rt{$rtherm}
+if ($rekman != "0.0") set basejobdir={$basejobdir}re{$rekman}
+if ($ivor != "0") set basejobdir={$basejobdir}esr{$esr}vv{$vorvor}iv{$ivor}
+
+echo
+echo -n ' Job directory name (default '{$basejobdir}')? '
+set var=$<
+if ($var != "") set basejobdir=$var
+
+# work out the last run which has been performed:
+# First make a bogus empty directory so this works!
+mkdir {$basejobdir}r000
+set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+rmdir {$basejobdir}r000
+
+@ next_run = ( $last_run + 1 )
+@ p1 = ( $next_run / 100 )
+@ jr = ( $next_run - ( 100 * $p1 ) )
+@ p2 = ( $jr / 10 )
+@ p3 = ( $jr - ( 10 * $p2 ) )
+set pind={$p1}{$p2}{$p3}
+
+set jobdir={$basejobdir}r{$pind}
+
+#=============================================================
+# Lastly move all data to desired job directory:
+
+# Move temporary directory to job directory:
+mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+# Copy handy script for viewing spectra:
+/bin/cp $bindir/spec_view .
+# Copy restart script:
+/bin/cp $bindir/restart .
+
+echo ' ' >> job_info
+echo ' Job directory:' >> job_info
+echo $datadir >> job_info
+
+echo ' To set the job running, type'
+echo cd $datadir
+echo bjob $algo
+echo

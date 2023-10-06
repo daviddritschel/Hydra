@@ -1,0 +1,21 @@
+#!/usr/bin/env csh
+
+# Assigns a disk where the job output will go
+
+set host = `hostname | awk -F. '{print $(1)}'`
+
+if ( $host == "davidd-latitude-5430" ) then
+# laptop at home:
+
+   echo /home/dgd/data
+
+else if ( ($host == cyclone) || ($host == vortex) || ($host == tornado) || ($host == fortran1) ) then
+
+   echo /scratch/$user
+
+else
+# all other machines:
+
+   echo /local_raid/$user
+
+endif

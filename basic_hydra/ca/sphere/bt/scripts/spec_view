@@ -1,0 +1,138 @@
+#!/usr/bin/env python
+
+# This script plots the powerspectra obtained from running powerspec.f90. 
+# The input file is assumed to be spectra.asc.
+
+# Some help on further options can be obtained by running:
+# >spec_view -h
+
+#=====perform the various imports========
+#=======needed by the main code==========
+import sys,os,warnings
+# Define main hydra tree locations:
+uname=os.getlogin()
+homedir=os.getenv('HOME')
+rootdir=os.path.join(homedir,'hydra','scripts')
+moddir=os.path.join(rootdir,'modules')
+graphicsdir=os.path.join(rootdir,'graphics')
+sys.path.append(moddir)
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.colors as clrs
+# Set default plot save resolution to a large value:
+mpl.rcParams['savefig.dpi'] = 800
+import argparse
+warnings.simplefilter("ignore",DeprecationWarning)
+
+#========================================
+#=====various function definitions=======
+#========================================
+
+def parse_args():
+  parser = argparse.ArgumentParser(prog='spec_view')
+  parser.add_argument('-xlims', metavar='x_lim' , type=float , nargs=2, default='0.0 2.71'.split(),help='Lower and upper limits for x range')
+  parser.add_argument('-ylims', metavar='y_lim' , type=float , nargs=2, default='-17.0 3.0'.split(),help='Lower and upper limits for y range')
+  args = parser.parse_args() 
+  return args
+
+def get_ng():
+  # This routine reads the src/parameters.f90 file
+  # to obtain the vertical resolution of the run ng.
+  # This is done by using a simple regexp.
+  # It returns an integer with value ng.
+
+  import re
+
+  # Open input file:
+  try:
+    in_file = open('src/parameters.f90','r')# try opening filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+  # Read the file into a list of strings and close it:
+  param_file=in_file.readlines()
+  in_file.close()
+
+  # Make a list of all strings matching the given regexp: 
+  comprehend=[]
+  for line in param_file:
+    comprehend.append(re.findall('(?<=ng=)\d+',line))
+  # Trim the list, select an element, convert to integer and return it.
+  comprehend=[comp for comp in comprehend if comp!=[]]
+  return int(comprehend[0][0])
+
+def running(args):
+
+# Open input file:
+  try:
+     in_file=open('spectra.asc','r') # try opening spectra.asc
+  except IOError, message:# error if file not found 
+     print(' spectra.asc does not exist; create it with powerspec')
+     sys.exit()
+  
+#  Read in data and close input file:
+  raw_data = np.array(np.fromfile(file=in_file,dtype=float,sep='\n'))
+  in_file.close()
+
+  N=get_ng()
+  kmax=N/2-1
+
+# Set the number of frames:
+  nframes = int(len(raw_data)/(2*kmax+1))  
+  print(' Number of frames found: ',nframes)
+
+# Shape the data array into a useful shape for plotting:
+  frames=range(0,nframes)
+  tim_eles = [i*(2*kmax+1) for i in frames]
+  shaped_data = np.delete(raw_data,tim_eles)[0:(2*kmax+1)*nframes].reshape((nframes,kmax,2))
+  global ic 
+# Grab the correct sub-array for plotting  
+  ic = 0
+  
+  fig = plt.figure(1)
+  ax = fig.add_subplot(111)
+  im = ax.plot(shaped_data[ic].transpose()[0],shaped_data[ic].transpose()[1],'k-',label='zeta')
+  ax.set_title('Frame no.: '+str(ic+1))
+  ax.legend()
+  xlimits=[float(x) for x in args.xlims]
+  ylimits=[float(y) for y in args.ylims]
+  ax.set_xlim(xlimits)  
+  ax.set_ylim(ylimits)
+
+  def on_press(event):
+    global ic
+    if event.key=='=':
+      axes=event.canvas.figure.get_axes()[0]
+      if ic != nframes-1:
+        ic+=1
+      xlim=axes.get_xlim()
+      ylim=axes.get_ylim()
+      axes.clear()
+      axes.plot(shaped_data[ic].transpose()[0],shaped_data[ic].transpose()[1],'k-',label='zeta')
+      axes.set_title('Frame no.: '+str(ic+1))
+      axes.legend()
+      axes.set_xlim(xlim)  
+      axes.set_ylim(ylim)
+      plt.draw()
+    if event.key=='-':
+      axes=event.canvas.figure.get_axes()[0]
+      if ic != 0:
+        ic-=1
+      xlim=axes.get_xlim()
+      ylim=axes.get_ylim()
+      axes.clear()
+      axes.plot(shaped_data[ic].transpose()[0],shaped_data[ic].transpose()[1],'k-',label='zeta')
+      axes.set_title('Frame no.: '+str(ic+1))
+      axes.legend()
+      axes.set_xlim(xlim)  
+      axes.set_ylim(ylim)
+      plt.draw()
+
+  cid=fig.canvas.mpl_connect('key_press_event',on_press)
+  plt.show()
+ 
+
+if __name__ == '__main__':
+  args = parse_args()
+  running(args)

@@ -1,0 +1,40 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#             Job setup script for a strip of uniform PV
+#=========================================================================#
+set datagen = "vstrip"
+
+# Data generation routine specific parameters:
+set wid  =  "0.4"    # Meridional width of strip in the domain
+set amp2 =  "0.02"   # Amplitude of sin(2kx) mode (k = 2*pi/L_x)
+set amp3 = "-0.01"   # Amplitude of sin(3kx) mode
+
+#==========================================================================
+echo ' We start with a uniform PV strip of width w and PV = 4*pi.'
+echo
+
+echo -n ' Width of the strip, w (default' $wid')? '
+set var=$<
+if ($var != "") set wid=$var
+
+echo ' The upper edge is displaced by A_2*sin(2kx)+A_3*sin(3kx) where'
+echo ' k = 2*pi/L_x.'
+echo -n ' Amplitude of sin(2kx), A_2 (default' $amp2')? '
+set var=$<
+if ($var != "") set amp2=$var
+echo -n ' Amplitude of sin(3kx), A_3 (default' $amp3')? '
+set var=$<
+if ($var != "") set amp3=$var
+
+echo '  Parabolic PV strip;  width, w:     ' $wid >> job_info
+echo ' ' >> job_info
+echo '  The upper edge is displaced by' >> job_info
+echo '  dy =' $amp2'*sin(2kx)+'$amp3'*sin(3kx)' >> job_info
+
+cat << /EOF > in_$datagen
+$wid
+$amp2 $amp3
+/EOF
+
+$datagen < in_$datagen > out_$datagen

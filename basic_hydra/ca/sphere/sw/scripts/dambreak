@@ -1,0 +1,61 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the dambreak
+#=========================================================================#
+set datagen = "dambreak"
+
+#==========================================================================
+echo ' We consider an initial height anomaly field of the form'
+echo '          h = eps*tanh((phi-phi_0)/b) + C'
+echo ' where C is chosen so that h has zero global mean.'
+
+echo
+echo -n ' Enter eps (default 0.25): '
+set eps=$<
+if ($eps == "") set eps="0.25"
+
+echo -n ' Central latitude, phi_0 (degrees; default 0)? '
+set phi0=$<
+if ($phi0 == "") set phi0="0.0"
+
+echo -n ' Dam half width, b (degrees; default 5)? '
+set b=$<
+if ($b == "") set b="5.0"
+
+echo ' ' >> job_info
+echo ' Height anomaly h = eps*tanh((phi-phi_0)/b) + C' >> job_info
+echo ' ' >> job_info
+echo ' Amplitude, eps:                     ' $eps >> job_info
+echo ' Central latitude, phi_0:            ' $phi0 >> job_info
+echo ' Dam half width, b:                  ' $b >> job_info
+
+echo
+echo ' To make the flow azonal, we displace the latitudes by'
+echo ' A*cos(phi)*cos(m*lambda).'
+
+echo
+echo -n ' Amplitude, A (degrees; default 1)? '
+set amp=$<
+if ($amp == "") set amp="1.0"
+
+echo -n ' Wavenumber, m (default 3)? '
+set m=$<
+if ($m == "") set m="3"
+
+echo ' ' >> job_info
+echo ' To make the flow azonal, we displace the latitudes by' >> job_info
+echo ' A*cos(phi)*cos(m*lambda).' >> job_info
+echo ' ' >> job_info
+echo ' Aplitude, A (degrees):              ' $amp >> job_info
+echo ' Wavenumber, m:                      ' $m >> job_info
+
+cat << /EOF > in_$datagen
+$eps
+$phi0 
+$b
+$amp
+$m
+/EOF
+
+$datagen < in_$datagen > out_$datagen

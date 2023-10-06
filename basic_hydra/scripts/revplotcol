@@ -1,0 +1,132 @@
+#!/usr/bin/env python2.7
+
+# Code to read output text files formatted in columns 
+# with an unknown number of columns of float data.
+# They are then plotted up - either against the first column
+# of data or against a simple integer counter of the 
+# same length.
+
+# *** This code reverses x & y *** Thus, the first column is
+# plotted on the y axis, and all the remaining ones are plotted
+# on the x axis.
+
+# Read help info for more details of options parsed at call.
+
+#=====perform the various imports========
+#=======needed by the main code==========
+import sys,os,warnings,itertools
+uname=os.getlogin()
+homedir=os.getenv('HOME')
+rootdir=os.path.join(homedir,'hydra','scripts')
+moddir=os.path.join(rootdir,'modules')
+sys.path.append(moddir)
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from cycler import cycler
+# Set default plot save resolution to a large value:
+import argparse
+warnings.simplefilter("ignore",DeprecationWarning)
+
+#========================================
+#=====various function definitions=======
+#========================================
+
+def parse_args():
+  parser = argparse.ArgumentParser(prog='plotcol')
+  parser.add_argument('input', metavar='input_filename' , type=str, nargs='+',  help='Input file')
+  parser.add_argument('-length', metavar='length' , type=int, help='Only consider first length rows')
+  parser.add_argument('-sym', metavar='sym' , type=str , nargs='*', default=['-'], help='Symbol cycle used for multiple lines on the same axes. Possibles are matplotlib line codes (-,x,o etc). Default is -')
+  parser.add_argument('-xlim', metavar='x_lim' , type=float , nargs=2, help='Lower and upper limits for the x (horizontal) range in plots')
+  parser.add_argument('-ylim', metavar='y_lim' , type=float , nargs=2, help='Lower and upper limits for the y (vertical) range in plots')
+  parser.add_argument('-figsize', metavar='figsize' , type=float , nargs=2, default='None None'.split(), help='Width and height (in inches) of plotted image')
+  parser.add_argument('-dpi', metavar='dpi' , type=int , default='800', help='dpi of any saved image file')
+  parser.add_argument('-ccycle', metavar='ccycle' , type=str , nargs='*', default=['k','b','r','g'], help='Colour cycle used for multiple lines on the same axes. Possibles are matplotlib color codes (k=black,b=blue,r=red, etc). Default is k b r g')
+  parser.add_argument('-nox', action='store_true' , help='Use an integer counter instead of first column as x data for plots')  
+  parser.add_argument('-hold', action='store_true' , help='Plot all on same axes')  
+  args = parser.parse_args() 
+  return args
+
+def get_data(fname,args):
+  # Open input file(s):
+  try:
+     in_file = open(fname,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+     print >> sys.stderr, 'File could not be opened', message
+     sys.exit()
+
+  #  Read in data and close input file:
+  raw_data = np.loadtxt(in_file,dtype=float,unpack=True)
+  in_file.close()
+
+  # Set length of data
+  if args.length:
+    length = args.length
+  else:
+    length = raw_data.shape[1]
+
+  return np.array([col[0:length] for col in raw_data])
+
+def main():
+  args = parse_args()
+
+  # Set saved image dpi:
+  mpl.rcParams['savefig.dpi'] = args.dpi
+
+  # Setup symbol iterator:
+  symbols = itertools.cycle(args.sym)
+
+  # Set figure size
+  if args.figsize[0] == 'None':
+    figure_size = None
+  else:
+    figure_size = (args.figsize[0],args.figsize[1])
+
+  for fnumber,fname in enumerate(args.input):
+    # Read data file and get array for plotting:
+    main_array = get_data(fname,args)
+
+    # Set x data
+    if args.nox:
+      x = range(0,main_array[0].shape[0])
+    else:
+      x = main_array[0]
+      main_array = np.delete(main_array,0,0)
+
+    # Set figure size
+    if args.figsize[0] == 'None':
+      figure_size=None
+    else:
+      figure_size=(args.figsize[0],args.figsize[1])
+
+    # Set symbol:
+    symbol = symbols.next()
+
+    # Set hold status
+    if args.hold: 
+      fig = plt.figure(1,figsize=figure_size)
+      ax = fig.add_subplot(111)
+      if fnumber == 0:
+        ax.set_prop_cycle(cycler('color',args.ccycle))
+      for i,column in enumerate(main_array):
+        ax.plot(column,x,symbol)
+      if args.xlim:
+        ax.set_xlim(args.xlim)
+      if args.ylim:
+        ax.set_ylim(args.ylim)
+    else:
+      for i,column in enumerate(main_array):
+        fig = plt.figure(i+1,figsize=figure_size)
+        ax = fig.add_subplot(111)
+        if fnumber == 0:
+          ax.set_prop_cycle(cycler('color',args.ccycle))
+#          ax.set_color_cycle(args.ccycle)
+        ax.plot(column,x,symbol)
+        if args.xlim:
+          ax.set_xlim(args.xlim)
+        if args.ylim:
+          ax.set_ylim(args.ylim)
+  plt.show()
+
+if __name__ == '__main__':
+  main()

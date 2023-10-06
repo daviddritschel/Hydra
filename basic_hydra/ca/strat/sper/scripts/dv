@@ -1,0 +1,40 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#    Runs dataview on any selected field in the evolution subdirectory
+#=========================================================================#
+
+set n=$#argv
+
+if ($n == 0) then
+   echo
+   echo '  Usage:   dv <field> <options>'
+   echo
+   echo '  Examples:'
+   echo
+   echo '  dv qq'
+   echo '  dv qq -lims -0.001 0.001'
+   echo '  dv qq -notitle -cb'
+   echo
+   echo '  (For all options, just type "dataview")'
+   echo
+   exit (-1)
+else
+   set field=$1
+endif
+
+# Get resolution
+set nx = `grep "nx=" src/parameters.f90 | awk -F= '{print $(NF-1)}' | awk -F, '{print $1}'`
+
+set ny = `grep "ny=" src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F, '{print $1}'`
+
+@ nyp1 = ( $ny + 1 )
+
+if ($n != 1) then
+   # Remove first element of argument list <field> to get <options>:
+   shift
+   dataview -ndim $nx $nyp1 {evolution/}$field{.r4} $argv &
+else
+   dataview -ndim $nx $nyp1 {evolution/}$field{.r4} &
+endif
+

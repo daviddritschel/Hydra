@@ -1,0 +1,49 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for an initially random spectrum
+#=========================================================================#
+set datagen = "ranpv"
+
+# Data generation routine specific parameters:
+set ak0  =  "12.0"   # Initial peak wavenumber, k0 above
+set ro  =    "0.6"   # PV based Rossby number
+set ngen = "55555"   # Random seed
+
+#==========================================================================
+echo ' We assume initial potential enstrophy spectrum of the form'
+echo 
+echo '   Q(k) = c(k_d^2+k^2)k^{2p-3}exp[-(p-1)*(k/k_0)^2]'
+echo 
+echo ' where k_d is the Rossby deformation wavenumber.'
+
+echo
+echo -n ' Peak wavenumber, k0 (default' $ak0')? '
+set var=$<
+if ($var != "") set ak0=$var
+
+echo 
+echo -n ' PV based Rossby number, max|PV|/f (default' $ro')? '
+set var=$<
+if ($var != "") set ro=$var
+
+echo -n ' Random seed (default' $ngen')? '
+set var=$<
+if ($var != "") set ngen=$var
+
+echo ' ' >> job_info
+echo ' We start with the potential enstrophy spectrum' >> job_info
+echo ' Q(k) = c(k_d^2+k^2)k^{2p-3}exp[-(p-1)*(k/k_0)^2]' >> job_info
+echo ' ' >> job_info
+echo ' Above, p = 3 and k_0 =' $ak0 >> job_info
+echo ' ' >> job_info
+echo ' PV based Rossby number, max|PV|/f =' $ro >> job_info
+echo ' Random seed =' $ngen >> job_info
+
+cat << /EOF > in_$datagen
+$ak0
+$ro
+$ngen
+/EOF
+
+$datagen < in_$datagen > out_$datagen

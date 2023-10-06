@@ -1,0 +1,66 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for an initial condition consisting of one or more
+#   vortex patches having the same vorticity. 
+#=========================================================================#
+
+set datagen = "patch"
+
+# Default input parameters:
+set nvor = "1"    # Number of vortices
+set latc = "30"   # Central latitude of patch
+set lonc = "0"    # Central longitude of patch
+set rad = "15"    # Radius of vortex
+#=========================================================================#
+
+echo 
+echo -n ' Number of vortex patches to place (default' $nvor')? ' 
+set var=$<
+if ($var != "") set nvor=$var
+
+set dlon=`echo "scale=1; 360/$nvor" | bc -l`
+
+echo $nvor > in_$datagen
+
+echo ' ' >> job_info
+
+set j=1
+while ( $j <= $nvor )
+   echo
+   echo ' ===> Vortex' $j
+
+   echo -n '  Latitude of vortex centre (degrees, default' $latc')? ' 
+   set var=$<
+   if ($var != "") set latc=$var
+   echo $latc >> in_$datagen
+
+   echo -n ' Longitude of vortex centre (degrees, default' $lonc')? ' 
+   set var=$<
+   if ($var != "") set lonc=$var
+   echo $lonc >> in_$datagen
+
+   set lonc=`echo "scale=1; $lonc + $dlon" | bc -l`
+
+   echo -n ' Radius of vortex (degrees, default' $rad')? '
+   set var=$<
+   if ($var != "") set rad=$var
+   echo $rad >> in_$datagen
+
+   echo ' ===> Vortex' $j >> job_info
+   echo ' Central  latitude of the vortex:    ' $latc >> job_info
+   echo ' Central longitude of the vortex:    ' $lonc >> job_info
+   echo ' Radius of the vortex:               ' $rad >> job_info
+
+@ j++
+
+end
+
+# Pick up the data write option created in flow-setup:
+cat option >> in_$datagen
+/bin/rm option
+
+echo ' ' >> job_info
+echo ' *** All vortices have a vorticity jump of 4*pi' >> job_info
+
+./$datagen < in_$datagen > out_$datagen

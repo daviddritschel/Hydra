@@ -1,0 +1,31 @@
+#!/usr/bin/env csh
+
+# Runs a given exectuable in the background niced to +19 in a clean manner. 
+# Directs standard out/error into a named log file.
+# This script should not be used to run scripts from other shells (eg sh, bash, ...).
+
+# usage: 
+# > bjob [log_file] exec_name
+#
+
+set n=$#argv
+
+if ($n != 0) then
+  if ($n == 2) then
+    (nice +19 nohup time $2) >&! $1 &
+  else
+    (nice +19 nohup time $1) >&! log &
+  endif
+else
+   echo
+   echo '  Usage:   bjob [log_file] exec_name'
+   echo
+   echo '  If log_file is omitted, the name "log" is used'
+   echo
+   exit (-1)
+endif
+
+set jobpid = $!
+echo
+echo '  Job PID = ' $jobpid ' (this is saved in the file job_PID)'
+echo $jobpid > job_PID

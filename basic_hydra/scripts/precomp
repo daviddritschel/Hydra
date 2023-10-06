@@ -1,0 +1,44 @@
+#!/usr/bin/env csh
+
+# Pre-compiles a FORTRAN source code (INCLUDING the .F extension)
+# with a string of passed arguments.  The source code is modified
+# with the explicitly passed arguments.
+
+# Usage:  precomp <argument_string> <code>
+
+# Example: precomp -Dnx_pix=512 -Dny_pix=512 bbinmake.F
+
+set n=$#argv
+
+if ($n != 0) then
+   set code=$argv[$n]
+else
+   echo ''
+   echo '  Usage:   precomp <argument_string> <code>'
+   echo ''
+   echo '  Example: precomp -Dnx_pix=512 -Dny_pix=512 bbinmake.F'
+   echo ''
+   echo '  WARNING: The source code is modified with the explicitly passed arguments.'
+   echo ''
+   exit (-1)
+endif
+
+# Identify machine type:
+set mach = `machine`
+
+# Use C pre-processor to put chosen parameters $code:
+
+if ( ($mach == intel32) || ($mach == portland) || ($mach == gfortran) || ($mach == intel) || ($mach == opteron) || ($mach == cluster) ) then
+#    PC type machines:
+   /lib/cpp -traditional $argv $code.tmp
+else if ( ($mach == up2000) || ($mach == digital) ) then
+#   Digital type machines; pre-processor is m4:
+   m4 $argv > $code.tmp
+else
+#    All others:
+   /lib/cpp -P $argv $code.tmp
+endif
+
+#  ***>  Change or modify above as necessary  <***
+
+/bin/mv $code.tmp $code

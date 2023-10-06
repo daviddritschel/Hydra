@@ -1,0 +1,114 @@
+              Commonly used tools for the hydra package
+              -----------------------------------------
+
+   The following is a list of tools or scripts available to all parts of 
+the hydra package.  (A few "geometry" specific scripts are listed after.)
+In most cases, typing the name of the tool (or the name followed by -h) 
+gives a description of the arguments which are required and those which 
+are optional.  Defaults can be found at the top of most scripts.
+
+   Note, all these can be executed from any location, as long as your
+path variable is correctly set, as discussed in the "installation" file 
+in this directory.
+
+Script name    Type      Function
+
+bjob           csh       Launches a background process, niced at level 19.
+                         This is used widely by flow-setup scripts to start
+                         a simulation and leave it running even if the user
+                         logs out of the shell.
+                         =>  Type bjob to view all options.
+
+data2mp4       python    Takes data files ending in .r8, .r4, .i4, .i2, .c2,
+                         .c1, .asc. or .dat and creates a movie in mp4 format.
+                         =>  Use -h to view all options.
+
+dataview       python    Takes data files ending in .r8, .r4, etc and creates
+                         images in a resizeable and zoom-able window on the 
+                         screen.  Advance forward by pressing or holding down
+                         the "=" key (below "+") or backwards using the "-"
+                         key.  Buttons at the bottom of the image allow one
+                         to export a particular image to a wide variety of
+                         image formats (png, eps, pdf, etc).
+                         =>  Use -h to view all options.
+
+diffview       python    Like dataview, but takes two identically-formatted
+                         files, e.g. F1 and F2, and subtracts the data in F1
+                         from that in F2 before imaging the difference data.
+                         =>  Use -h to view all options.
+
+homedir        csh       Returns the directory containing the user's home
+                         directory, usually "/user" but sometimes "/home"
+                         (*** modify contents of homedir if necessary ***)
+
+hydra          csh       Main package script for launching simulations.
+                         Typing "hydra -h" gives some general information
+                         about the hydra package, including its structure.
+
+machine        csh       Returns the name of the fortran compiler 
+                         depending on the name of the host machine.
+                         (*** It is necessary to modify this file and
+                         provide the machine names on your network ***)
+
+plotcol        python    General plotting routine for readable/ascii text 
+                         files (normally ending in .asc or .dat).  Makes
+                         a separate plot for each column, assuming the 
+                         first column is the "x" coordinate.  The first
+                         plot uses the second column as the "y" coordinate,
+                         etc.  The option "-hold" allows one to plot 
+                         everything in one image.
+                         =>  Use -h to view all options.
+
+precomp        csh       C pre-processor for passing arguments; used within
+                         the flow-setup scripts available in the "scripts"
+                         directory of each simulation method.  Normally,
+                         this works on the file "parameters.f90", containing
+                         a list of job parameters.  This script is not usually
+                         used on its own, but could be.
+                         =>  Type precomp to view all options.
+
+workdir        csh       Returns the "working directory", where you want to
+                         create and run jobs.  Normally this is "/local_raid"
+                         but can be "/scratch" etc.  
+                         @@ Do not use your home directory! Keep the hydra
+                         directory structure unchanged to simplify updates. 
+                         (*** modify contents of workdir if necessary ***)
+
+
+---------------------------------------------------------------------------
+Scripts commonly found in the "scripts" directory of each simulation method
+       i.e. in ~/hydra/<method>/<geometry>/<equations>/scripts
+---------------------------------------------------------------------------
+
+Script name    Type      Function
+
+flow-setup     csh       Sets up a simulation, including compiling, and
+                         creating a job directory containing many post-
+                         processing tools.
+                         (*** modify if new initialisation routines are
+                         added; for each new such routine, you will need
+                         to create a local script here, and also add a
+                         line to the makefile "init.make" in the "init"
+                         subdirectory located on the same level as the
+                         "scripts" subdirectory. ***)
+
+spec_view      python    Views spectra for each time frame.  The spectra 
+                         are written out by the "evolution.f90" module in
+                         the directory containing the main fortran90 source
+                         codes, e.g. "casl".   Advance forward by pressing or 
+                         holding down the "=" key (below "+") or backwards 
+                         using the "-"key.  Buttons at the bottom of the 
+                         image allow one to export a particular image to 
+                         a wide variety of image formats (png, eps, pdf, etc).
+                         =>  Use -h to view all options.
+
+zonalview      python    Views zonally-averaged quantities (e.g. u(y) with
+                         u along the "x" axis and y along the "y" axis)) at
+                         each time frame.  The required data are normally
+                         produced by running the fortran90 executable "zonal"
+                         at the completion of a run.
+                         See spec_view above for viewing instructions.
+                         =>  Use -h to view all options.
+
+Note: there are typically many other scripts available - they are well
+commented so you can see what they do.

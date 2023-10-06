@@ -1,0 +1,16 @@
+#!/usr/bin/env csh
+
+set k=101
+while ($k < 424)
+
+echo ' *** processing period' $k
+cat << /EOF > in_genfg
+$k
+1
+/EOF
+
+genfg < in_genfg
+
+@ k ++
+
+end

@@ -1,0 +1,165 @@
+#!/usr/bin/env python
+
+# This script plots zonal averages for a chosen quantity.
+# *** zonal must be run first to generate the data ***
+
+#=====perform the various generic imports========
+import warnings
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.colors as clrs
+# Set default plot save resolution to a large value:
+mpl.rcParams['savefig.dpi'] = 200
+# Set label size:
+mpl.rcParams['xtick.labelsize'] = 30
+mpl.rcParams['ytick.labelsize'] = 30
+mpl.rcParams['axes.linewidth'] = 3
+warnings.simplefilter("ignore",DeprecationWarning)
+
+#========================================
+#=====----------Main code----------======
+#========================================
+
+print()
+print('   ----------------------------------------------------------')
+print('   | Plots zonal averages vs latitude for a chosen quantity |')
+print('   ----------------------------------------------------------')
+print()
+print(' Choose one of the following:')
+print()
+print('   (1)  zonal velocity,')
+print('   (2)  dimensionless height anomaly,')
+print('   (3)  eddy kinetic energy,')
+print('   (4)  potential vorticity (PV), or')
+print('   (5)  PV flux, <v(q-qbar)>')
+print()
+opt_in = input(' Option (default 1)? ')
+option = int(opt_in or 1)
+
+if option==1:
+   file='zu.asc'
+   labelx='$\\bar{u}$'
+elif option==2:
+   file='zh.asc'
+   labelx='$\\bar{h}$'
+elif option==3:
+   file='zk.asc'
+   labelx='$\\overline{(u-\\bar{u})^2+v^2}/2$'
+elif option==4:
+   file='zq.asc'
+   labelx='$\\bar{q}$'
+else:
+   file='zf.asc'
+   labelx='$\\overline{v(q-\\bar{q})}$'
+
+# Open input file:
+in_file=open('evolution/'+file,'r')
+# Read the first header line to get ng:
+first_line=in_file.readline()
+ng=int(first_line.split()[-1])
+in_file.seek(0)
+
+# Read in the full data to a 1d array and close input file:
+raw_data = np.fromfile(file=in_file,dtype=float,sep='\n')
+in_file.close()
+nframes = int(len(raw_data)/(2*ng+2))  
+
+# Set the number of frames:
+print()
+print(' Number of time frames found: %i' %nframes)
+print()
+
+# Shape the data array(s) for plotting and work out
+# min/max values over all time:
+frames=range(0,nframes)
+time=[raw_data[i*(2*ng+2)] for i in frames]
+tim_eles = [i*(2*ng+2)+j for i in frames for j in range(2)]
+shaped_data = np.delete(raw_data,tim_eles)[0:(2*ng+2)*nframes].reshape((nframes,ng,2))
+x=np.zeros((nframes,ng))
+y=np.zeros((nframes,ng))
+xmax=0.0
+for i in frames:
+   x[i,:]=shaped_data[i].transpose()[0][0:ng]
+   y[i,:]=shaped_data[i].transpose()[1][0:ng]
+   xmax=max(xmax,np.amax(abs(x[i,:])))
+
+if option==3:
+   xmin=0.0
+else:
+   xmin=-xmax
+
+ymin=-np.pi/2.0
+ymax= np.pi/2.0
+
+#======================================================================
+# Grab the correct sub-array for plotting (ic is the current frame):
+global ic 
+ic = 0
+
+# Initiate a plotting window and plot relevant data into it:
+fig = plt.figure(1,figsize=[10,10])
+fig.subplots_adjust(bottom=0.2,left=0.2)
+ax = fig.add_subplot(111)
+im1 = ax.plot(x[ic],y[ic],'k-',lw=2)
+
+# Set plot title, legend and limits of the plot:
+ax.set_title('$t =$'+str('%.2f'%time[ic]), fontsize=30)
+ax.set_xlabel(labelx, fontsize=30)
+ax.set_ylabel('$\phi$', fontsize=30)
+ax.tick_params(length=10, width=3)
+ax.set_xlim(xmin,xmax)
+ax.set_ylim(ymin,ymax)
+
+def on_press(event):
+  # Routine to deal with re-plotting the window on keypress. 
+  # The keys -/= (ie. -/+ without the shift key) cycle through frames 
+  # forward and backwards.
+  global ic
+  if event.key=='=':
+    axes=event.canvas.figure.get_axes()[0]
+    ic = (ic+1+nframes) % nframes
+    xlim=axes.get_xlim()
+    ylim=axes.get_ylim()
+
+    # Clear the axes for replot:
+    axes.clear()
+
+    # Replot the relevant data:
+    axes.plot(x[ic],y[ic],'k-',lw=2)
+
+    # Set the title, legend and plot limits:
+    axes.set_title('$t =$'+str('%.2f'%time[ic]), fontsize=30)
+    axes.set_xlabel(labelx, fontsize=30)
+    axes.set_ylabel('$\phi$', fontsize=30)
+    axes.tick_params(length=10, width=3)
+    axes.set_xlim(xlim)  
+    axes.set_ylim(ylim)
+    plt.draw()
+
+  if event.key=='-':
+    axes=event.canvas.figure.get_axes()[0]
+    ic = (ic-1+nframes) % nframes
+    xlim=axes.get_xlim()
+    ylim=axes.get_ylim()
+
+    # Clear the axes for replot:
+    axes.clear()
+
+    # Replot the relevant data:
+    axes.plot(x[ic],y[ic],'k-',lw=2)
+
+    # Set the title, legend and plot limits:
+    axes.set_title('$t =$'+str('%.2f'%time[ic]), fontsize=30)
+    axes.set_xlabel(labelx, fontsize=30)
+    axes.set_ylabel('$\phi$', fontsize=30)
+    axes.tick_params(length=10, width=3)
+    axes.set_xlim(xlim)  
+    axes.set_ylim(ylim)
+
+    # Finally redraw the plot:
+    plt.draw()
+
+# Begin the plot and link keypress events to the above handler:
+cid=fig.canvas.mpl_connect('key_press_event',on_press)
+plt.show()

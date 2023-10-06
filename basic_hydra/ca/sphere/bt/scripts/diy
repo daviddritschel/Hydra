@@ -1,0 +1,54 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the diy (do it yourself) case
+#=========================================================================#
+
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="sphere"
+# Specify model equation type:
+set equa="bt"
+
+# Get directory containing initial data:
+set workdir=`workdir`
+set datadir=$workdir/hydra/$meth/$geom/$equa/initial_data
+
+if (!(-d $datadir)) then
+  echo ' *** Job directory does not exist! ***'
+  echo
+  echo ' The data should be in the directory'
+  echo $datadir
+  exit (-1)
+endif
+
+# Keep track of the temporary job directory:
+set currdir=`pwd`
+
+# Go to the directory containing initial data:
+cd $datadir
+
+# Look for r8 files in current working directory
+set r8files=`/bin/ls *.r8`
+set nf=$#r8files
+# Choose one prefix as the default:
+set infile_prefix = `echo $r8files[$nf] | awk -F. '{print $(NF-1)}'`
+
+echo -n ' Prefix (before .r8) of the datafile (default:' $infile_prefix')? '
+set var=$<
+if ($var != "") set infile_prefix=$var
+
+# Check that file exists:
+if (!(-e $infile_prefix.r8)) then
+   echo ' *** File does not exist!!!  Exiting.'
+   exit(-1)
+endif
+
+# Copy data to qq_init.r8 in the temporary job directory:
+cp $infile_prefix.r8 $currdir/qq_init.r8
+
+# Return to the temporary job directory:
+cd $currdir
+
+echo 

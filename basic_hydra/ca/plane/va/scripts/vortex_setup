@@ -1,0 +1,217 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Special job setup script for investigating the evolution of a
+#   flow starting with a gaussian vortex using the VA model.
+
+#   Developed 29/9/2021 by D G Dritschel @ St Andrews
+#=========================================================================#
+
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ #
+#                 ===>   Default parameters   <===
+
+set pi=3.14159265358979323846
+set ng="512"                     # Inversion grid resolution in both x and y
+set nq="40"                      # Number of PV contours in 0 < q < <q^2>/<|q|>
+set cof=`echo "4 * $pi" | bc -l` # Coriolis frequency f
+set fon="1.0"                    # f/N where N = sqrt{3}*c/H
+set nnu=3                        # Hyperviscosity power
+set cdamp="10.0"                 # cdamp*(f+|zeta|_rms)*(k/k_max)^(2*nnu)
+                                 # is the hyperdiffusivity coefficient
+
+#                 ===>   Default parameters   <===
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ #
+
+# Specify resolution:
+echo
+echo -n ' Resolution, ng (default' $ng')? '
+set var=$<
+if ($var != "") set ng=$var
+
+# Max number of contour nodes:
+@ npm = ( 15625 * ( $ng / 32 ) * ( $ng / 32) )
+
+# Specify inverse Rossby deformation length:
+set kdef="4"
+echo
+echo -n ' Rossby deformation wavenumber, f/c (default' $kdef')? '
+set var=$<
+if ($var != "") set kdef=$var
+
+# Specify H through f/N:
+echo
+echo -n ' f/N where N = sqrt{3}*c/H (default' $fon')? '
+set var=$<
+if ($var != "") set fon=$var
+
+# Compute short-scale gravity wave speed, c:
+set cgw=`echo "scale=12; $cof/$kdef" | bc -l`
+
+# Compute mean depth, H:
+set depth=`echo "scale=12; 1.73205080757*$fon/$kdef" | bc -l`
+
+echo ' '
+echo ' We consider a vortex with zeta(r,0) = eps*f*exp(-0.5*(r/R)^2), and'
+echo ' choose the vortex radius to be R = 5*pi/32.'
+echo ' '
+#set eps=0`echo "scale=3; 1.6/($kdef*$kdef)" | bc -l`
+set eps=0`echo "scale=6; 1/($kdef*$kdef)" | bc -l`
+echo -n ' Enter the Rossby number, eps (default' $eps'): '
+set var=$<
+if ($var != "") set eps=$var
+
+# Total simulation time
+set tsim=`echo "scale=1; 25/$eps" | bc -l`
+# Grid data save time increment:
+set tgsave=`echo "scale=1; 0.5/$eps" | bc -l`
+# Contour data save time increment:
+set tcsave=`echo "scale=1; 5/$eps" | bc -l`
+
+# Characteristic vortex radius, R = 5*pi/32:
+set rad=`echo "scale=12; 5 * $pi / 32" | bc -l`
+# With this radius and a diffusion length of dx/2, we have delta = 6.4/ng
+
+# Maximum vorticity, z0:
+set z0=`echo "scale=12; $eps * $cof" | bc -l`
+# With z0 = 4*pi*eps, a vortex rotation period is 1/eps
+set u0=`echo "scale=12; $z0*$rad/2" | bc -l`
+# This is the azimuthal velocity at r = R
+
+set glx=`echo "scale=10; 2 * $pi / $ng" | bc -l`  # Grid scale
+
+# Choose a marginally gravity-wave resolving time step:
+set dt=`echo "scale=14; $glx/$cgw" | bc -l`
+# Adjust to be a fraction of the grid save time:
+set fac=`echo "scale=14; $tgsave/$dt" | bc -l`
+set dt=`echo "scale=14; $tgsave/$fac:r" | bc -l`
+
+#==========================================================================
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="plane"
+# Specify model equation type:
+set equa="va"
+# Specify code version (typically OpenMP or not):
+set algo="caps"
+
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set workdir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $workdir)) mkdir $workdir
+set workdir=$workdir/hydra
+if (!(-d $workdir)) mkdir $workdir
+set basedir=$workdir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$workdir/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+echo ' '
+echo ' ===> Building job <==='
+
+#-------------------------------------------------------------------
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+# Set the job directory name:
+set jobdir=ng{$ng}kd{$kdef}eps{$eps}fon{$fon}
+
+# Create a file containing scales for use in "scale" script:
+echo $z0 $rad $u0 $fon > in_scale
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+echo ' ' >> job_info
+echo ' Inversion grid resolution in x & y: ' $ng >> job_info
+echo ' ' >> job_info
+echo ' Characteristic flow speed, U_0:     ' $u0 >> job_info
+echo ' Characteristic length, L:           ' $rad >> job_info
+echo ' Maximum vorticity, z_0:             ' $z0 >> job_info
+echo ' Prandtls ratio, f/N:                ' $fon >> job_info
+echo ' Time step dt = dx/c:                ' $dt >> job_info
+
+# Create input file for data generation routine:
+set datagen = "gauss"
+cat << /EOF > in_$datagen
+$eps
+$rad
+/EOF
+
+#============================================================
+# Build parameter file with cpp and make all codes:
+mkdir src
+cd src
+cp $srcdir/* .
+cp -r $hydradir/init .
+#cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " -----------------------------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts="-DN_G=$ng -DN_CONTQ=$nq -DN_SAMP=4 -DT_SIM={$tsim}d0 -DT_GSAVE={$tgsave}d0 -DT_CSAVE={$tcsave}d0 -DT_STEP={$dt}d0 -DH_BAR={$depth}d0 -DC_GW={$cgw}d0 -DCOR_FREQ={$cof}d0 -DC_DAMP={$cdamp} -DPOW_HYPER=$nnu"
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+#make caps setup $datagen proxy_post_all install
+make caps setup $datagen install
+
+cd ..
+echo " -----------------------------------------------------------------------"
+echo 
+
+#============================================================
+# Execute the data generation routine:
+echo $datagen < in_$datagen > out_$datagen
+$datagen < in_$datagen > out_$datagen
+
+# Copy useful scripts to job directory:
+/bin/cp $bindir/sv .
+/bin/cp $bindir/dv .
+/bin/cp $bindir/ddv .
+
+# Possibly create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Move temporary directory to job directory:
+/bin/mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+echo ' Launching job in the directory'
+echo $datadir
+
+cd $datadir
+
+bat log caps

@@ -1,0 +1,23 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the random initial vorticity case
+#=========================================================================#
+set datagen = "ranvor"
+
+# Default input parameters:
+set eps = "1.0"   # rms amplitude of relative vorticity
+#=========================================================================#
+
+echo ' We start with a random relative vorticity field.'
+echo -n ' Enter its rms amplitude (default' $eps'): '
+set var=$<
+if ($var != "") set eps=$var
+
+cat << /EOF > in_$datagen
+$eps
+/EOF
+
+$datagen < in_$datagen > out_$datagen
+
+echo ' Initial rms relative vorticity:     ' $eps >> job_info

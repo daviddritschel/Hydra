@@ -1,0 +1,42 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the slug initial condition
+#=========================================================================#
+set datagen = "slug"
+
+# Default parameters:
+set centre=0.0   # Centre of the higher density zone 
+set width=1.0    # Width  "   "    "       "     "
+set height=0.5   # Height "   "    "       "     "
+set trans=0.02   # Transition width from lower to higher density
+
+#==========================================================================
+echo ' We start with a slug of fluid of higher density.'
+echo -n ' Centre (in x) of the higher density zone (default' $centre')?'
+set var=$<
+if ($var != "") set centre=$var
+echo -n ' Width of the higher density zone (default' $width')? '
+set var=$<
+if ($var != "") set width=$var
+echo -n ' Height of the higher density zone (default' $height')? '
+set var=$<
+if ($var != "") set height=$var
+echo -n ' Width of the density transition zone (default' $trans')? '
+set var=$<
+if ($var != "") set trans=$var
+
+echo ' ' >> job_info
+echo ' Slug centre:                        ' $centre >> job_info
+echo ' Slug width:                         ' $width >> job_info
+echo ' Slug height:                        ' $height >> job_info
+echo ' Slug density transition length:     ' $trans >> job_info
+
+cat << /EOF > in_$datagen
+$centre
+$width
+$height
+$trans
+/EOF
+
+$datagen < in_$datagen > out_$datagen

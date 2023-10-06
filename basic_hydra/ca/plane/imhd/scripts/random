@@ -1,0 +1,79 @@
+#!/usr/bin/env csh
+
+#============================================================================#
+#          Job setup script for a random initial condition
+#============================================================================#
+set datagen = "random"
+
+# Data generation routine specific parameters:
+set urms="0.5"           # rms velocity field
+set pq="3"               # spectral exponent
+set kq="8"               # spectral peak wavenumber
+
+set brms="0.5"           # rms magnetic field
+set pa="1"               # spectral exponent
+set ka="8"               # spectral peak wavenumber
+
+set jseed="55555"        # random number seed
+
+#==========================================================================
+echo ' We assume a spectrum of the form c * k^{2p-1} * exp[-2*(k/k_0)^2]'
+echo ' for both the PV anomaly q and the magnetic potential A.'
+
+echo
+echo -n ' For q, enter the rms velocity, u_rms (default' $urms'): '
+set var=$<
+if ($var != "") set urms=$var
+
+if ($urms != 0.0) then
+   echo -n ' spectral exponent, p (default' $pq')? '
+   set var=$<
+   if ($var != "") set pq=$var
+   echo -n ' spectral peak wavenumber, k_0 (default' $kq')? '
+   set var=$<
+   if ($var != "") set kq=$var
+
+echo
+echo -n ' For A, enter the rms magnetic field, b_rms (default' $brms'): '
+set var=$<
+if ($var != "") set brms=$var
+
+if ($brms != 0.0) then
+   echo -n ' spectral exponent, p (default' $pa')? '
+   set var=$<
+   if ($var != "") set pa=$var
+   echo -n ' spectral peak wavenumber, k_0 (default' $ka')? '
+   set var=$<
+   if ($var != "") set ka=$var
+
+echo
+echo -n ' Random number seed (default' $jseed')? '
+set var=$<
+if ($var != "") set jseed=$var
+
+echo '  Random fields with spectra proportional to' >> job_info
+echo '     c * k^{2p-1} * exp[-2*(k/k_0)^2]' >> job_info
+echo ' ' >> job_info
+echo '  For the PV anomaly,' >> job_info
+echo '  rms velocity field:                ' $urms >> job_info
+echo '  exponent p:                        ' $pq >> job_info
+echo '  peak wavenumber, k_0:              ' $kq >> job_info
+echo ' ' >> job_info
+echo '  For the magnetic potential,' >> job_info
+echo '  rms magnetic field:                ' $brms >> job_info
+echo '  exponent p:                        ' $pa >> job_info
+echo '  peak wavenumber, k_0:              ' $ka >> job_info
+echo ' ' >> job_info
+echo '  Random number seed:                ' $jseed >> job_info
+
+cat << /EOF > in_$datagen
+$urms
+$pq
+$kq
+$brms
+$pa
+$ka
+$jseed
+/EOF
+
+$datagen < in_$datagen > out_$datagen

@@ -1,0 +1,747 @@
+#!/bin/csh
+
+#=========================================================================#
+#        Job setup script for the qg2l class of Fortran90 codes.
+#=========================================================================#
+
+echo
+echo '----------------------------------------------------------------------'
+echo ' The two-layer quasi-geostrophic Combined Lagrangian Advection Method'
+echo '    in channel geometry (periodic in x, free-slip boundaries in y)'
+echo '--------------------------------------------------------'
+
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="channel"
+# Specify model equation type:
+set equa="qg2l"
+
+# Ask for code version (typically OpenMP or not):
+#echo
+#echo ' Which version of the code should be used?'
+#echo -n ' (1) Serial, or (2) OpenMP - (default 1)? '
+#set version=$<
+#if ($version == "") set version="1"
+
+#if ($version == "1") then
+#   set algo="casl"
+#else
+#   set algo="omp_casl"
+#endif
+set algo="casl"
+# OpenMP not yet implemented!
+
+#==========================================================================
+# The following is totally generic!
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set basedir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/hydra
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$basedir
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+#==========================================================================
+# Generate a random number seed based on current time:
+
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+echo
+echo ' *** Job will be built in the temporary directory '
+echo $tmpdir
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+echo ' ' >> job_info
+
+#==========================================================================
+# Set fixed constant(s):
+
+set pi=3.14159265358979323846
+
+#==========================================================================
+# Choose domain size and resolution, including PV contour interval:
+
+set lxdpi = "2"     # Default domain width  L_x, divided by pi
+set lydpi = "1"     # Default domain height L_y, divided by pi
+
+echo
+echo ' We take the width of the domain (in x) to be '$lxdpi'*pi.'
+echo -n ' Width of the domain in y divided by pi, L_y/pi (default' $lydpi')? '
+set var=$<
+if ($var != "") set lydpi=$var
+set ellx=`echo "$lxdpi * $pi" | bc -l`
+set elly=`echo "$lydpi * $pi" | bc -l`
+set ymin=`echo "-$elly / 2" | bc -l`
+echo ' Width of the domain in x, L_x:      ' $lxdpi"*pi" >> job_info
+echo ' Width of the domain in y, L_y:      ' $lydpi"*pi" >> job_info
+
+# Choose resolution:
+set nx = "256"      # Default inversion grid resolution in x (east - west)
+echo
+echo -n ' Grid resolution in x (default' $nx')? '
+set var=$<
+if ($var != "") set nx=$var
+echo ' ' >> job_info
+echo ' Inversion grid resolution in x:     ' $nx >> job_info
+
+# Set y resolution so that dx = dy (as closely as possible):
+set fny=`echo "($nx*$lydpi)/$lxdpi + 0.5" | bc -l`
+set ny=${fny:r}
+echo -n ' Grid resolution in y (default' $ny')? '
+set var=$<
+if ($var != "") set ny=$var
+echo ' Inversion grid resolution in y:     ' $ny >> job_info
+
+# Set number of contours used to represent PV:
+set nq="80"         # Default 
+#echo -n ' No. of PV jumps to represent the PV variation in each layer (default' $nq')? '
+#set var=$<
+#if ($var != "") set nq=$var
+#echo ' Number of jumps to represent PV, nq:' $nq >> job_info
+
+#==========================================================================
+# Set up topography and mean/tidal flow if desired:
+
+set topogra = "y"
+echo -n ' Do you wish to include bottom topography (y/n, default' $topogra')? '
+set var=$<
+if ($var != "") set topogra=$var
+
+if ($topogra == "y") then
+   echo
+   echo ' The topography H_b(x,y) is multiplied by f_0/H_1 to be'
+   echo ' in PV units, where H_1 is the depth of the lower layer.'
+   echo
+   echo ' Choose one of the following options for f_0*H_b/H_1:'
+   set topoopt="1"
+   echo ' (1) Random, with variance spectrum c k^{2p+1} exp[-p(k/k_0)^2],'
+   echo ' (2) A*cos(2*pi*l*(y-y_c)/L_y) with y_c = y_0 + D*sin(2*pi*k*x/L_x),'
+   echo ' (3) Rotated elliptical-Gaussian form in the domain centre.'
+   echo -n ' Option - (default' $topoopt')? '
+   set var=$<
+   if ($var != "") set topoopt=$var
+   echo
+
+   if ($topoopt == "1") then 
+      set topogen = "random_topo"
+      set pow = "1.0"
+      set rk0 = "24.0"
+      set rms = "0.2"
+      set slope = "0.0"
+
+      echo -n ' p (default' $pow')? '
+      set var=$<
+      if ($var != "") set pow=$var
+
+      echo -n ' k_0 (default' $rk0')? '
+      set var=$<
+      if ($var != "") set rk0=$var
+
+      echo -n ' rms field amplitude (default' $rms')? '
+      set var=$<
+      if ($var != "") set rms=$var
+
+      echo -n ' Mean slope in y (default' $slope')? '
+      set var=$<
+      if ($var != "") set slope=$var
+
+      echo $pow $rk0 > in_$topogen
+      echo $rms >> in_$topogen
+      echo $slope >> in_$topogen
+
+   else if ($topoopt == "2") then 
+      set topogen = "sine_topo"
+      set amp = "0.2"
+      set k_top = "1"
+      set l_top = "2"
+      set y0sc = "0.0"
+      set Dsc = "0.1"
+
+      echo -n ' A (default' $amp')? '
+      set var=$<
+      if ($var != "") set amp=$var
+
+      echo -n ' k (default' $k_top')? '
+      set var=$<
+      if ($var != "") set k_top=$var
+
+      echo -n ' l (default' $l_top')? '
+      set var=$<
+      if ($var != "") set l_top=$var
+
+      echo -n ' y_0/L_y (default' $y0sc')? '
+      set var=$<
+      if ($var != "") set y0sc=$var
+
+      echo -n ' D/L_y (default' $Dsc')? '
+      set var=$<
+      if ($var != "") set Dsc=$var
+
+      echo $amp > in_$topogen
+      echo $k_top $l_top >> in_$topogen
+      echo $y0sc $Dsc >> in_$topogen
+
+   else if ($topoopt == "3") then 
+      set topogen = "ellipse_topo"
+      set amp = "-1.0"
+      set ael = "2.0"
+      set bel = "0.5"
+      set phi = "30.0"
+
+      echo ' We take f_0*H_b/H_1 = A*exp(-(X/a)^2-(Y/b)^2), where X & Y'
+      echo ' are rotated CCW by an angle phi from the x & y axes,'
+      echo ' taken to cross through the domain centre.'
+      echo
+      echo -n ' A (default' $amp')? '
+      set var=$<
+      if ($var != "") set amp=$var
+
+      echo -n ' a (default' $ael')? '
+      set var=$<
+      if ($var != "") set ael=$var
+
+      echo -n ' b (default' $bel')? '
+      set var=$<
+      if ($var != "") set bel=$var
+
+      echo -n ' phi (in degrees, default' $phi')? '
+      set var=$<
+      if ($var != "") set phi=$var
+
+      echo $amp > in_$topogen
+      echo $ael >> in_$topogen
+      echo $bel >> in_$topogen
+      echo $phi >> in_$topogen
+
+   else
+      echo ' Not a valid choice - exiting...'
+      /bin/rm -r $tmpdir  
+      exit(-1)
+
+   endif
+
+   set topflag=".true."
+   set utopo = "0.5"
+   set ftopo = "0.0"
+
+   echo
+   echo -n ' Additional uniform barotropic zonal velocity (default' $utopo')? '
+   set var=$<
+   if ($var != "") set utopo=$var
+   echo -n ' Tidal frequency (default' $ftopo')? '
+   set var=$<
+   if ($var != "") set ftopo=$var
+
+else
+   set topflag=".false."
+   set utopo=0.0
+   set ftopo=0.0
+endif
+
+#==========================================================================
+# Choose the data generation routine for initialising the PV distribution:
+
+set dataopt="3"
+echo
+# Note: "baroclinic" refers to the mode with the smallest deformation length
+echo ' Choose one of the following PV initialisation methods:'
+echo    ' (1) a flow at rest,'
+echo    ' (2) a baroclinic or upper-layer jet, or'
+echo    ' (3) a vertically-sheared mean horizontal flow.'
+echo -n ' Option - (default' $dataopt')? '
+set var=$<
+if ($var != "") set dataopt=$var
+
+# Set defaults for each data generation type:
+
+if ($dataopt == "1") then
+    # A state of rest initially
+   set datagen = "rest"
+
+    # Allow forcing and damping:
+   set forcing = "y"
+   set damping = "y"
+
+    # Set default damping rates:
+   set rtherm1="0.01"  # Default thermal damping rate of lower layer thickness
+   set rtherm1="0.01"  # Default thermal damping rate of upper layer thickness
+   set rekman="0.0"    # Default Ekman damping rate
+
+    # Physical parameters:
+   set crho = "2"      # Flow depth in density scale heights (0 for Boussinesq case)
+   set h1 = "0.5"      # Fractional depth of the lower layer (indexed 1)
+   set kdbar = "20.0"  # Nominal Rossby deformation wavenumber (1/Ldbar)
+   set kchar = "2"     # Characteristic wavenumber = beta/(4*pi), assuming
+                       # a characteristic period T = 4*pi/(beta/kchar) = 1
+
+    # Numerical parameters:
+   set tgsave="1.0"    # Grid data save time increment
+   set tcsave="100.0"  # Contour data save time increment (*** must be an
+                       # integer multiple of tgsave for restart to work ***)
+   set tsim="2000.0"   # Total simulation time
+
+    # Create empty input file for routine:
+   touch in_$datagen
+
+else if ($dataopt == "2") then
+    # A baroclinic or upper-layer jet. Note that the PV contrast across'
+    # the jet is taken to be 4*pi without loss of generality.
+   set datagen = "jet"
+
+    # No forcing:
+   set forcing = "n"
+    # Allow thermal relaxation back to initial PV distribution:
+   set damping = "y"
+
+    # Set default damping rates:
+   set rtherm1="0.0"   # Default thermal damping rate of lower layer thickness
+   set rtherm1="0.0"   # Default thermal damping rate of upper layer thickness
+   set rekman="0.001"  # Default Ekman damping rate
+
+    # Physical parameters:
+   set crho = "0"      # Flow depth in density scale heights (0 for Boussinesq case)
+   set h1 = "0.9"      # Fractional depth of the lower layer (indexed 1)
+   set kdbar = "12.0"  # Nominal Rossby deformation wavenumber (1/Ldbar)
+   set kchar = "0.4"   # Characteristic wavenumber = beta/(4*pi), assuming
+                       # a characteristic period T = 4*pi/(beta/kchar) = 1
+
+    # Numerical parameters:
+   set tgsave="2.0"    # Grid data save time increment
+   set tcsave="40.0"   # Contour data save time increment (*** must be an
+                       # integer multiple of tgsave for restart to work ***)
+   set tsim="2000.0"   # Total simulation time
+
+    # Create input file for routine:
+   set jetdir = "1"
+   set jettyp = "1"
+   set jetwid = "0.5"
+   set jetamp = "0.05"
+
+   echo
+   echo -n ' Eastward or westward jet (1 or -1, default' $jetdir')? '
+   set var=$<
+   if ($var != "") set jetdir=$var
+
+   echo -n ' Type of jet, (1) baroclinic or (2) upper-layer only (default' $jettyp')? '
+   set var=$<
+   if ($var != "") set jettyp=$var
+
+   echo -n ' Width of the jet (default' $jetwid')? '
+   set var=$<
+   if ($var != "") set jetwid=$var
+
+   echo ' The jet centreline is displaced by eps*sin(2*pi*x/L_x).'
+   echo -n ' Amplitude, eps (default' $jetamp')? '
+   set var=$<
+   if ($var != "") set jetamp=$var
+
+   echo $jetdir > in_$datagen
+   echo $jettyp >> in_$datagen
+   echo $jetwid >> in_$datagen
+   echo $jetamp >> in_$datagen
+
+else if ($dataopt == "3") then 
+    # A vertically-sheared mean horizontal flow
+   set datagen = "vertical-shear"
+
+    # No forcing:
+   set forcing = "n"
+    # Allow thermal relaxation back to initial PV distribution:
+   set damping = "y"
+
+    # Set default damping rates:
+   set rtherm1="0.01"  # Default thermal damping rate of lower layer thickness
+   set rtherm1="0.01"  # Default thermal damping rate of upper layer thickness
+   set rekman="0.0"    # Default Ekman damping rate
+
+    # Physical parameters:
+   set crho = "0"      # Flow depth in density scale heights (use 0 for alpha = 1)
+   set h1 = "0.9"      # Fractional depth of the lower layer (indexed 1)
+   set kdbar = "6.0"   # Nominal Rossby deformation wavenumber (1/Ldbar)
+   set kchar = "1"     # Characteristic wavenumber = beta/(4*pi), assuming
+                       # a characteristic period T = 4*pi/(beta/kchar) = 1
+
+    # Numerical parameters:
+   set tgsave="0.2"    # Grid data save time increment
+   set tcsave="10.0"   # Contour data save time increment (*** must be an
+                       # integer multiple of tgsave for restart to work ***)
+   set tsim="100.0"    # Total simulation time
+
+    # Create empty input file for routine:
+   touch in_$datagen
+
+else 
+   echo ' Not a valid choice - exiting...'
+   /bin/rm -r $tmpdir  
+   exit(-1)
+endif
+
+#==========================================================================
+# Set thermal and Ekman damping if present:
+
+if ($damping == "y") then
+   echo
+   echo -n ' Thermal damping rate of lower layer thickness (default' $rtherm1')? '
+   set var=$<
+   if ($var != "") set rtherm1=$var
+
+   set rtherm2=$rtherm1
+   echo -n ' Thermal damping rate of upper layer thickness (default' $rtherm2')? '
+   set var=$<
+   if ($var != "") set rtherm2=$var
+
+   echo
+   echo -n ' Ekman damping rate (default' $rekman')? '
+   set var=$<
+   if ($var != "") set rekman=$var
+
+   echo ' ' >> job_info
+   echo ' Lower layer thermal damping rate:   ' $rtherm1 >> job_info
+   echo ' Upper layer thermal damping rate:   ' $rtherm2 >> job_info
+   echo ' Ekman damping rate:                 ' $rekman >> job_info
+endif
+
+#==========================================================================
+# Set forcing parameters (if forcing is present):
+
+if ($forcing == "y") then 
+
+   set eirate="100"    # Default enstrophy injection rate
+   set rheton="0.05"   # Default radius of each vortex (inserted as a heton pair)
+   set vorvornd="100"  # Default max vorticity of the injected vortices * kdbar/beta
+
+   echo
+   echo -n ' Enstrophy input rate, eta (default' $eirate')? '
+   set var=$<
+   if ($var != "") set eirate=$var
+
+    # Do something only if eirate is non-zero:
+   if (($eirate != "0") && ($eirate != "0.") && ($eirate != "0.0")) then
+      echo -n ' Maximum dimensionless vorticity, zeta*kdbar/beta, of vortices (default' $vorvornd')? '
+      set var=$<
+      if ($var != "") set vorvornd=$var
+      set vorvor=`echo "$beta*$vorvornd/$kdbar" | bc -l`
+
+      echo -n ' Radius of vortices, R_heton (default' $rheton')? '
+      set var=$<
+      if ($var != "") set rheton=$var
+
+      echo ' ' >> job_info
+      echo ' Enstrophy input rate:               ' $eirate >> job_info
+      echo ' Vortex vorticity * kdbar/beta:      ' $vorvornd >> job_info
+      echo ' Heton radius:                       ' $rheton >> job_info
+   else
+       # Unused but needs to be non-zero to avoid dividing by zero in casl.f90:
+      set vorvor="1"
+   endif
+
+else
+    # No forcing but need to avoid dividing by 0 in casl.f90:
+   set eirate="0"
+   set rheton="0.1"
+   set vorvor="1"
+   set vorvornd="1"
+
+endif
+
+#==========================================================================
+# Choose main physical parameters:
+
+echo
+echo ' Average depth of the flow in density scale heights (choose 0 for the'
+echo -n ' Boussinesq case having a barotropic mode; default' $crho')? '
+set var=$<
+if ($var != "") set crho=$var
+
+if ($crho == "0") then
+    # Boussinesq case (density ratio -> 1):
+   set alpha="1.0"
+
+   echo -n ' Fractional depth of the lower layer (default' $h1')? '
+   set var=$<
+   if ($var != "") set h1=$var
+   echo ' Frac. depth of lower layer, h1:     ' $h1 >> job_info
+else
+    # Compressible atmospheric case (here we take h1 = h2 = 0.5):
+   set h1="0.5"
+   echo ' Taking each layer to be of equal depth.'
+
+   echo ' Total depth/density scale height:   ' $crho >> job_info
+   echo ' (Each layer occupies half the depth)' >> job_info
+   set alpha=`echo "(1.0-e(-$crho/2.0))/(e($crho/2.0)-1.0)" | bc -l`
+   echo ' This corresponds to rho_2/rho_1 =' $alpha
+   echo ' rho_2/rho_1:                        ' $alpha >> job_info
+endif
+
+echo
+echo -n ' Nominal baroclinic Rossby deformation wavenumber, k_Dbar (default' $kdbar')? '
+set var=$<
+if ($var != "") set kdbar=$var
+echo ' Rossby def. wavenumber, k_Dbar:     ' $kdbar >> job_info
+
+echo
+echo ' Without loss of generality, we take the characteristic timescale'
+echo ' T = 4*pi*k_char/beta = 1, where k_char is a characteristic wavenumber.'
+echo
+echo -n ' Characteristic wavenumber, k_char (default' $kchar')? '
+set var=$<
+if ($var != "") set kchar=$var
+set beta=`echo "$kchar*4*$pi" | bc -l`
+echo ' This corresponds to beta =' $beta
+
+echo ' Characteristic time scale, T = 4*pi/(beta/k_char) = 1' >> job_info
+echo ' Characteristic wavenumber, k_char:  ' $kchar >> job_info
+echo ' Planetary vorticity gradient, beta: ' $kchar"*4*pi" >> job_info
+echo ' ' >> job_info
+
+#----------------------------------------------------------------------------
+if ($dataopt == "3") then
+    # Organise vertical shear flow for certain initial conditions:
+   if ($crho == "0") then
+        # Boussinesq case (density ratio -> 1):
+        # Specify baroclinic flow:
+      set ubc="0.5"
+      echo
+      echo -n ' Baroclinic shear flow, U_bc (default' $ubc'): '
+      set var=$<
+      if ($var != "") set ubc=$var
+
+      echo ' ' >> job_info
+      echo ' Baroclinic shear flow at t = 0:     ' $ubc >> job_info
+
+      set h2=`echo "1.0-$h1" | bc -l`
+      set epsilon=`echo "1.0-$h2*$kdbar*$kdbar*$ubc/$beta" | bc -l`
+      echo ' This implies a PV gradient in lower layer / beta = ' $epsilon
+
+   else
+       # Non-Boussinesq case (crho > 0):
+       # Directly specify mean lower-later PV gradient:
+      set epsilon="-0.5"
+      echo
+      echo ' A vertical shear is specified by taking the mean lower-layer PV gradient'
+      echo -n ' to be equal to epsilon*beta.  Enter epsilon  (default' $epsilon')? '
+      set var=$<
+      if ($var != "") set epsilon=$var
+
+      set alphac=`echo "1.0-$alpha" | bc -l`
+      set h2=`echo "1.0-$h1" | bc -l`
+      set gamma1=`echo "(0.5-sqrt(0.25-$alphac*$h1*$h2))" | bc -l`
+      set gamma2=`echo "(0.5+sqrt(0.25-$alphac*$h1*$h2))" | bc -l`
+
+      set kdbarsq=`echo "$kdbar*$kdbar" | bc -l`
+      set kd1sq=`echo "$gamma1*$kdbarsq" | bc -l`
+      set kd2sq=`echo "$gamma2*$kdbarsq" | bc -l`
+      set kd1=`echo "sqrt($kd1sq)" | bc -l`
+      set kd2=`echo "sqrt($kd2sq)" | bc -l`
+
+      echo ' ' >> job_info
+      echo ' Mode 1 deformation wavenumber, kd_1:' $kd1 >> job_info
+      echo ' Mode 2 deformation wavenumber, kd_2:' $kd2 >> job_info
+
+      set vec11=`echo "$h1/(1.0-$gamma1)" | bc -l`
+      set vec12=`echo "($h2-$gamma1)/(1.0-$gamma1)" | bc -l`
+      set vec21=`echo "$h1/($h2-$gamma2)" | bc -l`
+      set vec22="1.0"
+
+      set determinant=`echo "$vec11*$vec22-$vec12*$vec21" | bc -l`
+      set vect11=`echo   "$vec22/$determinant" | bc -l`
+      set vect12=`echo "-($vec12/$determinant)" | bc -l`
+      set vect21=`echo "-($vec21/$determinant)" | bc -l`
+      set vect22=`echo   "$vec11/$determinant" | bc -l`
+
+      set momcon=`echo "-($h1*$vect12+$alpha*$h2*$vect22)/($h1*$vect11+$alpha*$h2*$vect21)" | bc -l`
+      set epsc=`echo "1.0-($epsilon)" | bc -l`
+      set ftop=`echo "$vec11*$gamma2-($momcon*$vec21*$gamma1)" | bc -l`
+      set fbot=`echo "$vec12*$gamma2-($momcon*$vec22*$gamma1)" | bc -l`
+      set lambda=`echo "1.0+$epsc*$ftop/$fbot" | bc -l`
+
+      set u2hat=`echo "$epsc*$beta*$determinant/($kdbarsq*$fbot)" | bc -l`
+      set u1hat=`echo "$momcon*$u2hat" | bc -l`
+
+      set u1=`echo "$vect11*$u1hat+$vect12*$u2hat" | bc -l`
+      set u2=`echo "$vect21*$u1hat+$vect22*$u2hat" | bc -l`
+
+      echo ' ' >> job_info
+      echo ' PV gradient in lower layer / beta:  ' $epsilon >> job_info
+      echo ' PV gradient in upper layer / beta:  ' $lambda  >> job_info
+
+      echo ' ' >> job_info
+      echo ' Mean velocity in lower layer:       ' $u1 >> job_info
+      echo ' Mean velocity in upper layer:       ' $u2 >> job_info
+
+   endif
+
+else
+    # For all other data generation routines, take the fraction PV gradient = 0
+    # (could generalise if desired):
+   set epsilon="1.0"
+
+endif
+
+#==========================================================================
+# Choose data save frequencies and simulation duration:
+echo
+echo -n ' Time interval between gridded data saves (default' $tgsave')? '
+set var=$<
+if ($var != "") set tgsave=$var
+echo ' Time interval between data saves:   ' $tgsave >> job_info
+
+echo -n ' Time interval between contour data saves (default' $tcsave')? '
+set var=$<
+if ($var != "") set tcsave=$var
+echo ' Time interval between contour saves:' $tcsave >> job_info
+
+echo -n ' Total simulation time (default' $tsim')? '
+set var=$<
+if ($var != "") set tsim=$var
+echo ' Total simulation time:              ' $tsim >> job_info
+echo ' ' >> job_info
+
+#=========================================================================
+# Build parameter file with cpp and make all codes:
+
+# Put all these dimensions into the dimens file needed for compilation:
+mkdir src
+cd src
+/bin/cp $srcdir/* .
+/bin/cp -r $hydradir/init .
+/bin/cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " -----------------------------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts1="-DN_X=$nx -DN_Y=$ny -DN_CONTQ=$nq -DT_SIM={$tsim}d0 -DT_GSAVE={$tgsave}d0 -DT_CSAVE={$tcsave}d0"
+set copts2="-DDENSITY_RATIO={$alpha}d0 -DH_1={$h1}d0 -DK_DBAR={$kdbar}d0 -DL_X={$ellx}d0 -DL_Y={$elly}d0 -DY_M={$ymin}d0 -DPV_GRAD={$beta}d0 -DU_TOPO={$utopo}d0 -DF_TOPO={$ftopo}d0"
+set copts3="-DFPV_GRAD1={$epsilon}d0 -DR_THERM1={$rtherm1}d0 -DR_THERM2={$rtherm2}d0 -DR_EKMAN={$rekman}d0" 
+set copts4="-DEI_RATE={$eirate}d0 -DVOR_VOR={$vorvor}d0 -DR_HETON={$rheton}d0 -DI_SEED={$iseed} -DTOP_FLAG=$topflag"
+set copts=`echo $copts1 $copts2 $copts3 $copts4`
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+make $algo setup $datagen proxy_post_all install clean
+
+if ($damping == "y") then
+   make eq-displace install clean
+endif
+
+if ($topogra == "y") then
+   make $topogen install clean
+endif
+
+cd ..
+echo " -----------------------------------------------------------------------"
+echo 
+
+#=========================================================================
+# For topography, execute the topography generation routine:
+if ($topogra == "y") then
+   $topogen < in_$topogen > out_$topogen
+endif
+
+# Execute the data generation script:
+$datagen < in_$datagen > out_$datagen
+
+# For thermal damping, initialise equilibrium interface displacements:
+if ($damping == "y") then
+   eq-displace
+endif
+
+# Copy useful scripts to job directory:
+/bin/cp $bindir/dv .
+/bin/cp $bindir/ddv .
+/bin/cp $bindir/sv .
+/bin/cp $bindir/zsv .
+/bin/cp $bindir/zv .
+/bin/cp $bindir/yeqv .
+/bin/cp $bindir/pdfv .
+/bin/cp $bindir/restart .
+
+#==========================================================================
+# Create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Set the job directory name (will be appended by 001, 002 etc...):
+
+# Sort out nice formatting for epsilon:
+set etmp=`echo "10000 * $epsilon + 0.5" | bc -l`
+set teps=`echo "scale=4; ($etmp:r / 10000.0)" | bc -l`
+
+set basejobdir=n{$nx}-{$ny}c{$crho}h{$h1}e{$teps}r{$rtherm1}
+echo
+echo -n ' Job directory name (default '{$basejobdir}')? '
+set var=$<
+if ($var != "") set basejobdir=$var
+
+# work out the last run which has been performed:
+# First make a bogus empty directory so this works!
+mkdir {$basejobdir}r000
+set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+rmdir {$basejobdir}r000
+
+set next_run = `echo "$last_run + 1" | bc`
+set p1 = `echo "$next_run / 100" | bc`
+set jr = `echo "$next_run - ( 100 * $p1 )" | bc`
+set p2 = `echo "$jr / 10" | bc`
+set p3 = `echo "$jr - ( 10 * $p2 )" | bc`
+
+set pind={$p1}{$p2}{$p3}
+
+set jobdir={$basejobdir}r{$pind}
+
+#=============================================================
+# Lastly move all data to desired job directory:
+
+# Move temporary directory to job directory:
+mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+echo ' ' >> job_info
+echo ' Job directory:' >> job_info
+echo $datadir >> job_info
+
+echo ' Launching job in'
+echo $datadir
+bat log casl
+echo
+
+echo ' To view the log file, type'
+echo 'cd' $datadir
+echo 'tail -f log'
+echo

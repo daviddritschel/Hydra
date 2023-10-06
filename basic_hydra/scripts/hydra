@@ -1,0 +1,172 @@
+#!/usr/bin/env csh
+
+#===========================================================================#
+# General script for launching a simulation from one of the hydra 
+# subdirectories
+
+# Written 4 June 2013 by D.G. Dritschel & S.E. King @ St Andrews
+#==========================================================================
+
+echo '      ==================================='
+echo '       The hydra flow simulation package '
+echo '      ==================================='
+
+# Get home directory from a script:
+set local_home=`homedir`
+# Location of the hydra flow simulation package:
+set basedir=$local_home/$user/hydra 
+
+if ($#argv != 0) then
+   echo
+   echo '  Documentation can be found in the hydra/doc subdirectory.'
+   echo
+   echo '  The directory structure of the hydra package is as follows:'
+   echo
+   tree -d $basedir
+   echo
+   echo '  The scripts subdirectory contains various package-wide generic c-shell and' 
+   echo ' python scripts including this one: "hydra".'
+   echo
+   echo '  The lib subdirectory contains core libraries, e.g. for carrying out one and'
+   echo 'two-dimensional FFTs.'
+   echo
+   echo '  The remaining subdirectories contain codes, makefiles and scripts for' 
+   echo 'specific fluid-dynamical numerical methods, such as contour advection (ca),' 
+   echo 'pseudo-spectral (ps), semi-Lagrangian (sl), and point vortices (points).'
+   echo
+   echo '  Documentation specific to various applications may be found in the relevant'
+   echo 'doc subdirectory.'
+   exit (-1)
+endif
+
+#---------------------------------------------------------------------
+# Get list of subdirectories:
+set fulldirlist=`/bin/ls $basedir`
+set ndir=$#fulldirlist
+
+# Exclude "scripts", "doc" and "lib" from the list of numerical methods available:
+set method=($fulldirlist)
+set nmet=0
+set i=1
+while ( $i <= $ndir )
+   set dir=$fulldirlist[$i]
+   if ( ($dir != "scripts") && ($dir != "doc") && ($dir != "lib") && ($dir != "base") ) then
+     @ nmet ++
+     set method[$nmet]=$dir
+   endif
+   @ i ++
+end
+
+echo
+echo 'The following general methods are available:'
+echo
+cd $basedir
+set imet=1
+while ( $imet <= $nmet )
+   set meth=$method[$imet]
+   echo "["$imet"] " $meth": " `cat $meth/method`
+   @ imet ++
+end
+
+set imet=1
+echo
+echo -n '  Choice (default' $imet')? '
+set var=$<
+if ($var != "") set imet=$var
+if ($imet > $nmet) then
+   echo ' *** Not a valid choice.  Exiting.'
+   exit (-1)
+endif
+
+#---------------------------------------------------------------------
+# Base directory of the numerical method:
+set basedir=$basedir/$method[$imet]
+# Get list of subdirectories:
+set fulldirlist=`/bin/ls $basedir`
+set ndir=$#fulldirlist
+
+# Exclude "method" from the list of flow geometries:
+set geometry=($fulldirlist)
+set ngeo=0
+set i=1
+while ( $i <= $ndir )
+   set dir=$fulldirlist[$i]
+   if ($dir != "method") then
+     @ ngeo ++
+     set geometry[$ngeo]=$dir
+   endif
+   @ i ++
+end
+
+echo
+echo 'The following flow "geometries" are available:'
+echo
+cd $basedir
+set igeo=1
+while ( $igeo <= $ngeo )
+   set geom=$geometry[$igeo]
+   echo "["$igeo"] " $geom": " `cat $geom/geometry`
+   @ igeo ++
+end
+
+set igeo=1
+echo
+echo -n '  Choice (default' $igeo')? '
+set var=$<
+if ($var != "") set igeo=$var
+if ($igeo > $ngeo) then
+   echo ' *** Not a valid choice.  Exiting.'
+   exit (-1)
+endif
+
+#---------------------------------------------------------------------
+# Base directory of the flow "geometry"
+set basedir=$basedir/$geometry[$igeo]
+# Get list of subdirectories:
+set fulldirlist=`/bin/ls $basedir`
+set ndir=$#fulldirlist
+
+# Exclude "geometry" from the list of flow geometries:
+set equations=($fulldirlist)
+set nequ=0
+set i=1
+while ( $i <= $ndir )
+   set dir=$fulldirlist[$i]
+   if ($dir != "geometry") then
+      if (-e $basedir/$dir/equations) then
+         @ nequ ++
+         set equations[$nequ]=$dir
+      endif
+   endif
+   @ i ++
+end
+
+# Check if there is a further equations subdirectory:
+if ($nequ != 0) then
+   echo
+   echo 'The following systems of equations are available:'
+   echo
+   cd $basedir
+   set iequ=1
+   while ( $iequ <= $nequ )
+      set equa=$equations[$iequ]
+      echo "["$iequ"] " $equa": " `cat $equa/equations`
+      @ iequ ++
+   end
+
+   set iequ=1
+   echo
+   echo -n '  Choice (default' $iequ')? '
+   set var=$<
+   if ($var != "") set iequ=$var
+   if ($iequ > $nequ) then
+      echo ' *** Not a valid choice.  Exiting.'
+      exit (-1)
+   endif
+
+#   Base directory of the system of equations
+   set basedir=$basedir/$equations[$iequ]
+endif
+
+# Run flow-setup script in local scripts directory:
+$basedir/scripts/flow-setup

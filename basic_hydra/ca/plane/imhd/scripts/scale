@@ -1,0 +1,100 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#  Script used for scaling the results of a MHD simulation; normally used
+#  after the script "special"
+
+#  Reads the files norms.asc and ene.asc; writes zjub.asc
+#  Reads also circulation.asc and writes scaled dGamma/dt to dgdt.asc
+#=========================================================================#
+
+# Read input file to get scaling parameters: for the simulations:
+set dum = `cat in_scale`
+
+set q0 = $dum[1]
+set radius = $dum[2]
+set u0 = $dum[3]
+set delta = $dum[4]
+set gamma = $dum[5]
+
+set tmult=`echo "scale=6; $q0*sqrt($delta)" | bc -l`
+
+set pi=3.14159265359
+set adom=`echo "scale=10; 4*$pi*$pi" | bc -l`
+
+# Find out how many time frames there are:
+set dum = `wc norms.asc`
+set nfr = $dum[1]
+
+# Create an output file:
+if (-e zjub.asc) /bin/rm zjub.asc
+touch zjub.asc
+
+set azrms=0.0
+set ajrms=0.0
+set aurms=0.0
+set abrms=0.0
+
+# Loop over frames and process:
+set kfr=1
+while( $kfr <= $nfr )
+   set dum = `head -$kfr norms.asc | tail -1`
+   set zrms=`echo "scale=10; sqrt($dum[2])/$q0" | bc -l`
+   set jrms=`echo "scale=10; sqrt($dum[3])/$q0" | bc -l`
+
+   set azrms=`echo "scale=10; $azrms+$zrms" | bc -l`
+   set ajrms=`echo "scale=10; $ajrms+$jrms" | bc -l`
+
+   set dum = `head -$kfr ene.asc | tail -1`
+   set urms=`echo "scale=10; sqrt(2*$dum[2]/$adom)/$u0" | bc -l`
+   set brms=`echo "scale=10; sqrt(2*$dum[3]/$adom)/$u0" | bc -l`
+
+   set aurms=`echo "scale=10; $aurms+$urms" | bc -l`
+   set abrms=`echo "scale=10; $abrms+$brms" | bc -l`
+
+   set tnd=`echo "scale=6; $tmult*$dum[1]" | bc -l`
+
+   echo ' Processing t =' $dum[1]
+   echo $tnd $zrms $jrms $urms $brms >> zjub.asc
+
+   @ kfr++
+end
+
+set azrms=`echo "scale=10; $azrms/$nfr" | bc -l`
+set ajrms=`echo "scale=10; $ajrms/$nfr" | bc -l`
+set aurms=`echo "scale=10; $aurms/$nfr" | bc -l`
+set abrms=`echo "scale=10; $abrms/$nfr" | bc -l`
+
+echo
+echo ' delta, gamma & average zeta_rms/q_0, j_rms/q_0, u_rms/u_0 and B_rms/u_0:'
+echo $delta $gamma $azrms $ajrms $aurms $abrms
+echo $delta $gamma $azrms $ajrms $aurms $abrms > average_zjub
+echo
+echo ' Scaled data for zeta_rms, j_rms, u_rms and B_rms is in zjub.asc'
+echo ' vs tau = delta^{1/2}*q_0*t.'
+echo
+
+#----------------------------------------------------------------------
+# Process data in circulation.asc to get (dGamma/dt)/(u_0^2*delta*gamma^2):
+
+# Find out how many time frames there are:
+set dum = `wc circulation.asc`
+set nfr = $dum[1]
+
+# Create an output file:
+if (-e dgdt.asc) /bin/rm dgdt.asc
+touch dgdt.asc
+
+# Loop over frames and process:
+set kfr=1
+while( $kfr <= $nfr )
+   set dum = `head -$kfr circulation.asc | tail -1`
+   set sdgdt=`echo "scale=10; $dum[4]/($u0*$u0*$delta*$gamma*$gamma)" | bc -l`
+   set tnd=`echo "scale=6; $tmult*$dum[1]" | bc -l`
+   echo $tnd $sdgdt >> dgdt.asc
+
+   @ kfr++
+end
+
+echo ' Also, tau vs (dGamma/dt)/(u_0^2*delta*gamma^2) is in dgdt.asc'
+echo

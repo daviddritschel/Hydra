@@ -1,0 +1,611 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the spherical shallow-water class of f90 codes.
+#=========================================================================#
+
+echo
+echo '--------------------------------------------------------'
+echo '              The spherical shallow-water'
+echo '          Combined Lagrangian Advection Method'
+echo '--------------------------------------------------------'
+
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="sphere"
+# Specify model equation type:
+set equa="sw"
+
+# Ask for code version (typically OpenMP or not):
+#echo
+#echo ' Which version of the code should be used?'
+#echo -n ' (1) Serial, or (2) OpenMP - (default 1)? '
+#set version=$<
+#if ($version == "") set version="1"
+
+#if ($version == "1") then
+#   set algo="caps"
+#else
+#   set algo="omp_caps"
+#endif
+set algo="caps"
+
+#==========================================================================
+# The following is totally generic!
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set workdir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $workdir)) mkdir $workdir
+set workdir=$workdir/hydra
+if (!(-d $workdir)) mkdir $workdir
+set basedir=$workdir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$workdir/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+#==========================================================================
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+echo
+echo ' *** Job will be built in the temporary directory '
+echo $tmpdir
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+
+#==========================================================================
+# Get the data generation routine to be used:
+set dataopt="5"
+echo
+echo ' Choose one of the following flow initialisation methods:'
+echo '    (1) an initially random PV anomaly field,'
+echo '    (2) the modified Rossby-Haurwitz test case,'
+echo '    (3) a random height anomaly in a state of rest,'
+echo '    (4) a dam break, or'
+echo -n '    (5) a state of rest forced by topography - (default' $dataopt')? '
+set var=$<
+if ($var != "") set dataopt=$var
+
+# Set defaults for each data generation type:
+
+if ($dataopt == "1") then 
+   set datagen = "randompv"
+   set forcing = "n"
+   set damping = "n"
+   set kd = "12"
+   set ng = "256"
+   set t_gsave = "2.0"
+   set t_csave = "20.0"
+   set t_sim = "200.0"
+
+else if ($dataopt == "2") then 
+   set datagen = "rossby"
+   set forcing = "n"
+   set damping = "n"
+   set kd = "20"
+   set ng = "256"
+   set t_gsave = "0.5"
+   set t_csave = "5.0"
+   set t_sim = "15.0"
+
+else if ($dataopt == "3") then 
+   set datagen = "adjust"
+   set forcing = "n"
+   set damping = "n"
+   set kd = "25"
+   set ng = "128"
+   set t_gsave = "1.0"
+   set t_csave = "10.0"
+   set t_sim = "250.0"
+
+else if ($dataopt == "4") then 
+   set datagen = "dambreak"
+   set forcing = "n"
+   set damping = "n"
+   set kd = "10"
+   set ng = "128"
+   set t_gsave = "1.0"
+   set t_csave = "10.0"
+   set t_sim = "250.0"
+
+else if ($dataopt == "5") then
+   set datagen = "rest"
+   set forcing = "y"
+   set damping = "y"
+   set kd = "32"
+   set ng = "256"
+
+else 
+   echo ' Not a valid choice - exiting...'
+   /bin/rm -r $tmpdir  
+   exit(-1)
+endif
+
+#==========================================================================
+# Set fixed constants:
+set pi=3.14159265358979
+set twopi=`echo "scale=10; 2 * $pi" | bc -l`
+
+#==========================================================================
+# Choose basic physical parameters:
+echo
+echo ' We consider a planet of radius 1 rotating with a period of one "day".'
+
+set Rocp = 1
+echo -n ' Gas constant / specific heat, R/c_p (default' $Rocp')? '
+   set var=$<
+   if ($var != "") set Rocp=$var
+
+set kopt=2
+echo
+echo ' Choose from one of the following deformation wavenumbers, k_d:'
+echo '    (1) k_d =  2'
+echo '    (2) k_d =  8'
+echo '    (3) k_d = 32'
+echo -n '    (4) other  (default' $kopt')? '
+set var=$<
+if ($var != "") set kopt=$var
+
+if ($kopt == 1) then
+   set kd=2
+else if ($kopt == 2) then
+   set kd=8
+else if ($kopt == 3) then
+   set kd=32
+else if ($kopt == 4) then
+   echo -n ' Enter k_d: '
+   set kd=$<
+endif
+
+# Planetary rotation rate:
+set omega=$twopi
+set fpole=`echo "2*$omega" | bc -l`
+
+# Set (short-scale) gravity wave speed:
+set cgw=`echo "scale=10; $fpole/$kd" | bc -l`
+echo ' This corresponds to a gravity wave speed of c = '$cgw
+
+echo ' ' >> job_info
+echo ' Planetary rotation rate, omega:     ' $omega >> job_info
+echo ' Polar deformation wavenumber, k_d:  ' $kd >> job_info
+echo ' Short-scale gravity wave speed, c:  ' $cgw >> job_info
+
+#-------------------------------------------------------------------
+# Set thermal and Ekman damping:
+if ($damping == "y") then 
+   set dopt=2
+   echo
+   echo ' Choose from one of the following damping time-scales, tau:'
+   echo '    (1) tau =  250'
+   echo '    (2) tau = 1000'
+   echo '    (3) tau = 4000'
+   echo -n '    (4) other  (default' $dopt')? '
+   set var=$<
+   if ($var != "") set dopt=$var
+
+   # Choose t_sim = 20000 + 4*tau:
+   if ($dopt == 1) then
+      set tau=250
+      set rth=0.004
+      set t_sim=21000          # 84 damping periods
+   else if ($dopt == 2) then
+      set tau=1000
+      set rth=0.001
+      set t_sim=24000          # 24 damping periods
+   else if ($dopt == 3) then
+      set tau=4000
+      set rth=0.00025
+      set t_sim=36000          #  8 damping periods
+   else if ($dopt == 4) then
+      echo -n ' Enter tau: '
+      set tau=$<
+      set rth=`echo "1.0 / $tau" | bc -l`
+      set t_sim = `echo "scale=1; 20000 + 4*$tau" | bc -l`
+   endif
+
+#  ==> Not yet implemented <==
+#   echo -n ' Ekman damping rate, r_ek (default' $rekman')? '
+#   set var=$<
+#   if ($var != "") set rekman=$var
+   set rekman="0.0"
+
+   echo ' ' >> job_info
+   echo ' Thermal damping time, tau:          ' $tau >> job_info
+   echo ' Thermal damping rate, 1/tau:        ' $rth >> job_info
+   echo '  Ekman  damping rate:               ' $rekman >> job_info
+else
+   set rth="0.0"
+   set rekman="0.0"
+endif
+
+#-------------------------------------------------------------------
+# Stochastic topographic forcing:
+if ($forcing == "y") then
+   echo
+   echo ' For the topographic forcing spectrum, choose either'
+   echo '    (1) narrow band, or'
+   echo '    (2) broad band.'
+   echo
+   set iopt="2"
+   echo -n ' Choice (default' $iopt')? '
+   set var=$<
+   if ($var != "") set iopt=$var
+   echo
+
+   set kb = 32
+   echo -n ' Central forcing wavenumber, k_b (integer, default' $kb')? '
+   set var=$<
+   if ($var != "") set kb=$var
+
+   echo ' ' >> job_info
+   if ($iopt == "1") then
+      # Narrow band:
+      echo ' We consider a flat spectrum between n = n1 and n2.'
+      @ nbeg = ( $kb - 2 )
+      echo -n ' Starting order, n1 (default' $nbeg')? '
+      set var=$<
+      if ($var != "") set nbeg=$var
+      @ nend = ( $nbeg + 4 )
+      echo -n '  Ending  order, n2 (default' $nend')? '
+      set var=$<
+      if ($var != "") set nend=$var
+      echo ' Narrow-band topographic forcing' >> job_info
+      echo ' between n = ' $nbeg ' and ' $nend >> job_info
+   else
+      # Broad band:
+      echo ' We consider a spectrum S(n) = alpha*exp(-alpha) where'
+      echo ' alpha = (n/kb)^3 and n is the spherical harmonic order.'
+      set nbeg = 1
+      @ nend = ( 9 * ( $kb / 4 ) )
+      echo ' Broad-band topographic forcing with spectrum' >> job_info
+      echo ' S(n) = a*exp(-a) where a = (n/kb)^3 and kb = ' $kb >> job_info
+   endif
+
+   set bopt=2
+   echo
+   echo ' Choose from one of the following forcing rates, b_rms:'
+   echo '    (1) b_rms = 0.0025'
+   echo '    (2) b_rms = 0.01'
+   echo '    (3) b_rms = 0.04'
+   echo -n '    (4) other  (default' $bopt')? '
+   set var=$<
+   if ($var != "") set bopt=$var
+
+   if ($bopt == 1) then
+      set brms=0.0025
+   else if ($bopt == 2) then
+      set brms=0.01
+   else if ($bopt == 3) then
+      set brms=0.04
+   else if ($bopt == 4) then
+      echo -n ' Enter b_rms: '
+      set brms=$<
+   endif
+   
+   set topt=2
+   echo
+   echo ' Choose from one of the following forcing de-correlation times, t_b:'
+   echo '    (1) t_b = 10'
+   echo '    (2) t_b = 40'
+   echo '    (3) t_b = 160'
+   echo -n '    (4) other  (default' $topt')? '
+   set var=$<
+   if ($var != "") set topt=$var
+
+   if ($topt == 1) then
+      set tb=10
+   else if ($topt == 2) then
+      set tb=40
+   else if ($topt == 3) then
+      set tb=160
+   else if ($topt == 4) then
+      echo -n ' Enter t_b: '
+      set tb=$<
+   endif
+
+   echo ' R.m.s. amplitude of the topography: ' $brms >> job_info
+   echo ' Markovian de-correlation time, t_b: ' $tb >> job_info
+
+else
+   set brms = "0.0" 
+   set tb = "1.0"
+   set nbeg = "0"
+   set nend = "0"
+endif
+
+if ($dataopt == "1") then 
+   # Use spherical harmonics to fix the initial PV anomaly:
+   echo
+   echo ' For the initial spectrum of the PV anomaly field, choose either'
+   echo '    (1) narrow band, or'
+   echo '    (2) broad band.'
+   echo
+   set iopt="2"
+   echo -n ' Choice (default' $iopt')? '
+   set var=$<
+   if ($var != "") set iopt=$var
+   echo
+
+   set kb = 32
+   echo -n ' Central wavenumber, k_b (integer, default' $kb')? '
+   set var=$<
+   if ($var != "") set kb=$var
+
+   echo ' ' >> job_info
+   if ($iopt == "1") then
+      # Narrow band:
+      echo ' We consider a flat spectrum between n = n1 and n2.'
+      @ nbeg = ( $kb - 2 )
+      echo -n ' Starting order, n1 (default' $nbeg')? '
+      set var=$<
+      if ($var != "") set nbeg=$var
+      @ nend = ( $nbeg + 4 )
+      echo -n '  Ending  order, n2 (default' $nend')? '
+      set var=$<
+      if ($var != "") set nend=$var
+      echo ' Narrow-band initial PV anomaly spectrum' >> job_info
+      echo ' between n = ' $nbeg ' and ' $nend >> job_info
+   else
+      # Broad band:
+      echo ' We consider a spectrum S(n) = alpha*exp(-alpha) where'
+      echo ' alpha = (n/kb)^3 and n is the spherical harmonic order.'
+      set nbeg = 1
+      @ nend = ( 9 * ( $kb / 4 ) )
+      echo ' Broad-band initial PV anomaly spectrum' >> job_info
+      echo ' S(n) = a*exp(-a) where a = (n/kb)^3 and kb = ' $kb >> job_info
+   endif
+
+   set bopt=2
+   echo
+   echo ' Choose from one of the following PV-based Rossby numbers (rms):'
+   echo '    (1) Ro = 0.25'
+   echo '    (2) Ro = 0.5'
+   echo '    (3) Ro = 0.75'
+   echo -n '    (4) other  (default' $bopt')? '
+   set var=$<
+   if ($var != "") set bopt=$var
+
+   if ($bopt == 1) then
+      set brms=0.25
+   else if ($bopt == 2) then
+      set brms=0.5
+   else if ($bopt == 3) then
+      set brms=0.75
+   else if ($bopt == 4) then
+      echo -n ' Enter Ro: '
+      set brms=$<
+   endif
+
+   set tb = "1.0"
+endif
+
+#==========================================================================
+# Set numerical parameters:
+
+echo
+echo ' A longitude-latitude grid of dimensions 2*ng x ng is used.'
+echo -n ' Number of latitudes, ng (default' $ng')? '
+set var=$<
+if ($var != "") set ng=$var
+
+echo ' ' >> job_info
+echo ' Number of latitudes, ng (half grid):' $ng >> job_info
+@ nt = ( 2 * $ng )
+echo ' Number of longitudes, 2*ng:         ' $nt >> job_info
+
+# Latitudinal grid spacing (needed to determine recommended time step):
+set gl=`echo "$pi / $ng" | bc -l`
+
+#-------------------------------------------------------------------
+# Set the PV jump across contours:
+set nq="80" #recommended default is 80 (minimum 40)
+#echo
+#echo -n ' Number of PV jumps to represent f = 2*Omega*sin(lat) (default' $nq')? '
+#set var=$<
+#if ($var != "") set nq=$var
+
+echo ' ' >> job_info
+echo ' No. of PV jumps to represent f, nq: ' $nq >> job_info
+
+#-------------------------------------------------------------------
+# Data save frequency:
+
+if ($rth != 0.0) then
+   set t_csave = `echo "scale=2; $t_sim/25" | bc -l`
+   set t_gsave = `echo "scale=3; $t_sim/500" | bc -l`
+endif
+echo
+echo -n ' Time interval between gridded data saves (default' $t_gsave')? '
+set var=$<
+if ($var != "") set t_gsave=$var
+
+echo ' Time interval between data saves:   ' $t_gsave >> job_info
+
+echo -n ' Time interval between contour data saves (default' $t_csave')? '
+set var=$<
+if ($var != "") set t_csave=$var
+
+echo ' Time interval between contour saves:' $t_csave >> job_info
+
+echo -n ' Duration of the entire simulation (default' $t_sim')? '
+set var=$<
+if ($var != "") set t_sim=$var
+
+echo ' Duration of entire simulation:      ' $t_sim >> job_info
+
+#-------------------------------------------------------------------
+# Choose a marginally gravity-wave resolving time step:
+set dtmult="0.8"
+#echo
+#echo -n ' We choose the time step dt = M*dx/c; enter M (default' $dtmult'): '
+#set var=$<
+#if ($var != "") set dtmult=$var
+
+set dt_gw=`echo "scale=14; $gl / $cgw" | bc -l`
+set dt=`echo "scale=14; $dtmult*$dt_gw" | bc -l`
+# Adjust to be a fraction of the grid save time:
+set fac=`echo "scale=14; $t_gsave/$dt" | bc -l`
+set dt=`echo "scale=14; $t_gsave/$fac:r" | bc -l`
+#echo ' This corresponds to dt =' $dt
+
+echo ' ' >> job_info
+echo ' Gravity-wave resolving time step:   ' "0"$dt_gw >> job_info
+echo ' Time step used:                     ' "0"$dt >> job_info
+
+#-------------------------------------------------------------------
+# Hyperviscosity:
+set nnu=3
+set drate="20"
+#echo
+#echo ' ***Lap^'{$nnu} 'Hyperdiffusion is applied to spectral fields.'
+#echo -n ' Damping rate on wavenumber k = ng (default' $drate')? '
+#set var=$<
+#if ($var != "") set drate=$drate
+
+echo ' ' >> job_info
+echo ' ***Lap^'{$nnu} 'Hyperdiffusion used' >> job_info
+echo ' Damping rate on k = ng is C*f;    C:' $drate >> job_info
+
+#============================================================
+# Build parameter file with cpp and make all codes:
+
+# Put all these dimensions into the dimens file needed for compilation:
+mkdir src
+cd src
+cp $srcdir/* .
+cp -r $hydradir/init .
+cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files ..."
+echo " -----------------------------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts="-DN_G=$ng -DT_STEP={$dt}d0 -DT_GSAVE={$t_gsave}d0 -DT_CSAVE={$t_csave}d0 -DT_SIM={$t_sim}d0 -DN_CONTQ=$nq -DPOW_HYPER=$nnu -DD_RATE={$drate}d0 -DCOR_FREQ={$fpole}d0 -DC_GW={$cgw}d0 -DR_CP={$Rocp}d0 -DR_THERM={$rth}d0 -DR_EKMAN={$rekman}d0 -DB_RMS={$brms}d0 -DT_B={$tb}d0 -DN_BEG=$nbeg -DN_END=$nend -DI_SEED=$iseed"
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+make caps setup $datagen proxy_post_all install clean
+
+cd ..
+echo " -----------------------------------------------------------------------"
+echo 
+
+#============================================================
+# Execute the data generation script:
+$bindir/$datagen
+
+#==========================================================================
+# Create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Set the job directory name:
+if ($dataopt == "5") then
+   if ($Rocp == "1") then
+      set jobdir=n{$ng}kd{$kd}n{$nbeg}-{$nend}tb{$tb}tau{$tau}brms{$brms}
+   else
+      set jobdir=kappa{$Rocp}n{$ng}kd{$kd}n{$nbeg}-{$nend}tb{$tb}tau{$tau}brms{$brms}
+   endif
+else
+   set basejobdir=n{$ng}kd{$kd}dr{$drate}
+   echo
+   echo -n ' Job directory name (default' $basejobdir')? '
+   set var=$<
+   if ($var != "") set basejobdir=$var
+
+   # Work out the last run which has been performed:
+   # First make a bogus empty directory so this works!
+   mkdir {$basejobdir}r000
+   set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+   rmdir {$basejobdir}r000
+
+   @ next_run = ( $last_run + 1 )
+   @ p1 = ( $next_run / 100 )
+   @ jr = ( $next_run - ( 100 * $p1 ) )
+   @ p2 = ( $jr / 10 )
+   @ p3 = ( $jr - ( 10 * $p2 ) )
+   set pind={$p1}{$p2}{$p3}
+
+   set jobdir={$basejobdir}r{$pind}
+endif
+
+#=============================================================
+# Lastly move all data to desired job directory:
+
+# Move temporary directory to job directory:
+mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+# Copy handy scripts for viewing fields and diagnostics:
+/bin/cp $bindir/sv .
+/bin/cp $bindir/zv .
+/bin/cp $bindir/dv .
+/bin/cp $bindir/ddv .
+/bin/cp $bindir/odv .
+/bin/cp $bindir/oddv .
+/bin/cp $bindir/pog.py .
+/bin/cp $bindir/cpog.py .
+/bin/cp $bindir/mpog.py .
+/bin/cp $bindir/pene.py .
+/bin/cp $bindir/pcont.py .
+/bin/cp $bindir/pdiag.py .
+/bin/cp $bindir/pstair.py .
+
+echo ' and the balance conditions delta_t = gamma_t = 0.' >> job_info
+echo ' ' >> job_info
+echo ' Job directory:' >> job_info
+echo $datadir >> job_info
+
+# Go to job directory:
+cd $datadir
+
+# Balance initial conditions:
+echo
+echo ' Balancing initial conditions (setting delta_t = gamma_t = 0) ...'
+# Used for initial balancing; log overwritten below:
+echo "0" > log
+dgbal < log > out_dgbal
+echo
+echo ' Launching job in the background.'
+
+# Set job running:
+bat log $algo
+
+echo
+echo ' To monitor progress, type'
+
+echo 'cd' $datadir
+echo 'tail -f log'
+echo

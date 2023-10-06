@@ -1,0 +1,65 @@
+#!/bin/csh
+
+#==========================================================================#
+# Job restart script for the doubly-periodic 1-layer qg class of f90 codes
+#==========================================================================#
+
+# This is run from the local job directory containing a simulation which
+# has already been performed or has terminated prematurely.
+
+#---------------------------------------------------------------------------
+# Work out the maximum time loop:
+set dum=`ls cont/qqnodes??? | wc`
+set loopinit=$dum[1]
+
+# See what the variable loopinit contains in parameters.f90:
+set dum = `grep loopinit src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set loopinit_ori = $dum[1]
+
+# Work out the total simulation time:
+set dum = `grep tsim src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set tsim_ori = $dum[1]
+
+# Maximum simulation time specified in old simulation:
+echo
+echo -n ' Final time of the simulation (default' $tsim_ori')? '
+set tsim=$<
+if ($tsim == "") set tsim=$tsim_ori
+
+# Time interval between contour saves:
+set dum = `grep tcsave src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set tcsave_ori = $dum[1]
+
+# Continue run in the same directory:
+set t=`echo "$tcsave_ori * $loopinit" | bc -l`
+
+# Create a job information summary file:
+touch new_job_info
+echo ' Job created at                      ' `date` >> new_job_info
+echo ' on                                  ' $HOST >> new_job_info
+echo ' ' >> new_job_info
+
+echo ' Simulation continues from time t =  ' $t >> new_job_info
+echo ' Total simulation time:              ' $tsim >> new_job_info
+echo ' ' >> new_job_info
+
+ # Modify parameter file in src subdirectory:
+cd src
+sed s/loopinit=$loopinit_ori/loopinit=$loopinit/ parameters.f90 > junk
+mv junk parameters.f90
+sed s/tsim=$tsim_ori/tsim=$tsim/ parameters.f90 > junk
+mv junk parameters.f90
+
+ # Compile all codes and move sources to sub-directory:
+echo
+echo ' Recompiling codes ...'
+make caps proxy_post_all install clean
+cd ..
+
+ # Launch job:
+echo
+echo ' *** Launching job in the background ...'
+bjob log{$loopinit} caps
+echo
+echo '     To see the output log file, type '
+echo ' tailf log'{$loopinit}

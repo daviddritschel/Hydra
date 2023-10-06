@@ -1,0 +1,45 @@
+                      Brief Installation Notes
+                      ========================
+
+     The first thing to do is change the base name of the hydra
+directory from "basic_hydra" to "hydra". Ideally, put this in your
+home directory. This is the "trunk of the tree" (or the body of
+the hydra!).
+
+     The hydra package makes widespread use of makefiles, c-shell
+scripts and python scripts (python3.0 or higher).  When using a
+linux-based operating system (which is the basis for Apple Macintosh
+operating systems), these features are commonly available and there is
+nothing to install.  Some numerical and graphics extensions used by
+python scripts may need to be installed, in particular "numpy" and
+"matplotlib" (these are freely available).  Using a Windows operating
+system is not recommended, as many features either do not exist or
+would take great effort to get working.
+
+     The hydra package is otherwise fully self-contained.  Users
+should modify the scripts "machine", "homedir" and "workdir" in the
+scripts subdirectory (~/hydra/scripts) to be consistent with their own
+computer and user/work space organisation, and be sure to add "hydra"
+to their path (indicating which directories to search for scripts).
+It is also handy to add "." to the path, for example the line
+
+set path = ( $path ~/hydra/scripts . )
+
+in .cshrc if you use the tcsh shell.  The package is then ready
+for use once you have updated the path, e.g. by 
+
+source .cshrc
+
+(the path is automatically updated when starting a new shell).  Simply
+typing "hydra" will give the user various options for setting up a
+flow simulation.  For a list of handy scripts and what they do, please
+see the file "tools" in this directory (~/hydra/doc).
+
+                                                    David Dritschel
+						    St Andrews, UK
+
+Historical note: the hydra package was first created in 1993.
+
+Further information: There are additional features which can be
+provided upon request (email david.dritschel@st-andrews.ac.uk),
+such as applications to other physical systems or geometries.

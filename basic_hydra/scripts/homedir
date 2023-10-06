@@ -1,0 +1,17 @@
+#!/usr/bin/env csh
+
+# Assigns the user's home disk where all source codes and scripts are kept
+
+set host = `hostname | awk -F. '{print $(1)}'`
+
+if ( $host == "davidd-latitude-5430" ) then
+# laptop at home:
+
+   echo '/home'
+
+else
+# all other machines:
+
+   echo '/user'
+
+endif

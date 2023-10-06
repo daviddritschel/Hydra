@@ -1,0 +1,93 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for three Gaussian vortices
+#=========================================================================#
+set datagen = "threevort"
+
+# Data generation routine specific parameters:
+set a1 =  "1.0"    # Vorticity amplitude/f of vortex 1
+set x1 =  "9.0"    # x_1 relative to domain width/18
+set y1 =  "3.0"    # y_1 relative to domain width/18
+set r1 =  "1.0"    # R_1 relative to domain width/18
+
+set a2 = "-1.0"    # Vorticity amplitude/f of vortex 2
+set x2 =  "9.0"    # x_2 relative to domain width/18
+set y2 = "17.0"    # y_2 relative to domain width/18
+set r2 =  "0.5"    # R_2 relative to domain width/18
+
+set a3 = "-1.0"    # Vorticity amplitude/f of vortex 3
+set x3 = "15.0"    # x_3 relative to domain width/18
+set y3 =  "8.0"    # y_3 relative to domain width/18
+set r3 =  "0.5"    # R_3 relative to domain width/18
+
+#==========================================================================
+echo ' We consider three Gaussian vortices.'
+
+echo
+echo -n ' Vorticity amplitude/f for vortex 1 (default' $a1')? '
+set var=$<
+if ($var != "") set a1=$var
+
+echo -n ' x_1 relative to domain width/18 (default' $x1')? '
+set var=$<
+if ($var != "") set x1=$var
+
+echo -n ' y_1 relative to domain width/18 (default' $y1')? '
+set var=$<
+if ($var != "") set y1=$var
+
+echo -n ' r_1 relative to domain width/18 (default' $r1')? '
+set var=$<
+if ($var != "") set r1=$var
+
+echo
+echo -n ' Vorticity amplitude/f for vortex 2 (default' $a2')? '
+set var=$<
+if ($var != "") set a2=$var
+
+echo -n ' x_2 relative to domain width/18 (default' $x2')? '
+set var=$<
+if ($var != "") set x2=$var
+
+echo -n ' y_2 relative to domain width/18 (default' $y2')? '
+set var=$<
+if ($var != "") set y2=$var
+
+echo -n ' r_2 relative to domain width/18 (default' $r2')? '
+set var=$<
+if ($var != "") set r2=$var
+
+echo
+echo -n ' Vorticity amplitude/f for vortex 3 (default' $a3')? '
+set var=$<
+if ($var != "") set a3=$var
+
+echo -n ' x_3 relative to domain width/18 (default' $x3')? '
+set var=$<
+if ($var != "") set x3=$var
+
+echo -n ' y_3 relative to domain width/18 (default' $y3')? '
+set var=$<
+if ($var != "") set y3=$var
+
+echo -n ' r_3 relative to domain width/18 (default' $r3')? '
+set var=$<
+if ($var != "") set r3=$var
+
+cat << /EOF > in_$datagen
+$a1
+$x1
+$y1
+$r1
+$a2
+$x2
+$y2
+$r2
+$a3
+$x3
+$y3
+$r3
+/EOF
+
+$datagen < in_$datagen > out_$datagen

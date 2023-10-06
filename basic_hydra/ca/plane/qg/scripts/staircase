@@ -1,0 +1,43 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for a PV staircase with a vortex
+#=========================================================================#
+set datagen = "staircase"
+
+# Data generation routine specific parameters:
+set y0  =  "0.0"   # y centre of vortex
+set r0  =  "0.5"   # radius of vortex
+set q0nd = "1.0"   # Dimensionless amplitude of vortex
+
+#==========================================================================
+echo ' The background PV is a staircase with a jet spacing of'
+echo ' beta*L_y/2 (2 steps).  A vortex is placed at x = 0 and'
+echo ' boundaries by beta*L_y.  A vortex is place at x = 0 and'
+echo ' y = y_0, having radius r_0 and uniform PV q_0.'
+
+echo
+echo -n ' y centre of the vortex, y0 (default' $y0')? '
+set var=$<
+if ($var != "") set y0=$var
+
+echo -n ' radius of the vortex, r0 (default' $r0')? '
+set var=$<
+if ($var != "") set r0=$var
+
+echo -n ' Vortex PV, q0, divided by beta*L_y/2 (default' $q0nd')? '
+set var=$<
+if ($var != "") set q0nd=$var
+
+echo ' ' >> job_info
+echo '  Vortex in a PV staircase' >> job_info
+echo ' ' >> job_info
+echo '  y centre of the vortex, y0 = ' $y0 >> job_info
+echo '  radius of the vortex, r0 = ' $r0 >> job_info
+echo '  Vortex PV, q0, divided by beta*L_y/2 =' $q0nd >> job_info
+
+cat << /EOF > in_$datagen
+$y0 $r0 $q0nd
+/EOF
+
+$datagen < in_$datagen > out_$datagen

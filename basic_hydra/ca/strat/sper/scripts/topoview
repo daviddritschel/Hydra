@@ -1,0 +1,577 @@
+#!/usr/bin/env python
+
+#=====perform the various imports========
+#=======needed by the main code==========
+import sys,os,warnings
+uname=os.getlogin()
+homedir=os.getenv('HOME')
+rootdir=os.path.join(homedir,'hydra','scripts')
+moddir=os.path.join(rootdir,'modules')
+graphicsdir=os.path.join(rootdir,'graphics')
+sys.path.append(moddir)
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.colors as clrs
+import argparse
+warnings.simplefilter("ignore",DeprecationWarning)
+
+#========================================
+#=====various function definitions=======
+#========================================
+
+def parse_args():
+  parser = argparse.ArgumentParser(prog='dataview')
+  parser.add_argument('input', metavar='input_filename' , type=str , help='Input file')
+  parser.add_argument('-frame', metavar='frame_no' , type=int,default='1', help='First frame number to show')
+  parser.add_argument('-ndim', metavar='n_dim' , type=int , nargs=2, default=[256,256], help='Number of x, and y grid points: nx ny')
+  parser.add_argument('-lims', metavar='v_lim' , type=float , nargs=2, help='Lower and upper limits for the colourmap range')
+  parser.add_argument('-xlims', metavar='xlims' , type=float , nargs=2, help='Lower and upper x grid points/values to image')
+  parser.add_argument('-ylims', metavar='ylims' , type=float , nargs=2, help='Lower and upper y grid points/balues to image')
+  parser.add_argument('-x0', action='store_true' , help='Read in an extra point in the x direction - useful for aperiodic codes')  
+  parser.add_argument('-y0', action='store_true' , help='Read in an extra point in the y direction - useful for aperiodic codes')  
+  parser.add_argument('-glob', action='store_true' , help='Scale colours based on the global min/max (or abs values) across all frames')  
+  parser.add_argument('-mod', action='store_true' , help='Scale colours based on +/- the max absolute value rather than straight min/max')  
+  parser.add_argument('-cb', action='store_true' , help='Add colourbar to plots - currently only makes sense for constant colourmap limits')  
+  parser.add_argument('-cmap', metavar='cmap' , default='stamap', type=str , help='Colour map to use')
+  parser.add_argument('-noticks', action='store_true' , help='Remove tickmark numbers from the axes')  
+  parser.add_argument('-notitle', action='store_true' , help='Remove title with frame number')  
+  parser.add_argument('-notime', action='store_true' , help='Do not read a time interleaved with the frames')  
+  parser.add_argument('-dpi', metavar='dpi' , type=int , default='800', help='dpi of any saved image file')
+  parser.add_argument('-mult', metavar='mult' , type=int,default='1', help='Factor to increase stated grid resolution by in each direction (eg 16x)')
+  parser.add_argument('-skip', metavar='skip' , type=int,default='1', help='How many x and y poionts to skip (i.e. read every [skip] points)')
+  args = parser.parse_args() 
+  return args
+
+#---------------------------
+
+def readtxtfile(args):
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+  
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+    
+  #  Read in data and close input file:
+  raw_array = np.array(np.fromfile(file=in_file,dtype=float,sep='\n'))
+  in_file.close()
+
+  # Set whether to read a time or not:
+  if not args.notime:
+    itime=1
+  else:
+    itime=0     
+  # Set the number of frames:
+  N = nx*ny
+  nframes = int(len(raw_array)/(N+itime))  
+  print(' Number of frames generated: ' nframes)
+
+  # Shape the data array into a useful shape for plotting:
+  frames = range(nframes)
+  out_array = np.empty((nframes,nx,ny))
+  for i in frames:
+    out_array[i,:,:] = raw_array[i*(N+itime)+itime:(i+1)*(N+itime)+1-itime].reshape(nx,ny)
+  return frames,out_array
+
+#---------------------------
+
+def readi4file(args):
+  import struct
+
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set the number of frames:
+  N = nx*ny
+  file_bytes = os.path.getsize(args.input)
+  nframes = int(file_bytes/(N*4))
+  print(' Number of frames generated: ',nframes)
+
+  frames = range(nframes)
+  raw_array = np.zeros(N*nframes,float)
+  for j in range(nframes):
+    i = j*N
+    while i < j*N+N:
+      bytes = in_file.read(4)
+      raw_array[i] = float(struct.unpack('i',bytes)[0])
+      i+=1
+  in_file.close()    
+  return frames,raw_array.reshape((nframes,nx,ny))
+
+#---------------------------
+
+def readc1file(args):
+  import struct
+
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set the number of frames:
+  N = nx*ny
+  file_bytes = os.path.getsize(args.input)
+  nframes = int(file_bytes/N)
+  print(' Number of frames generated: ',nframes)
+
+  frames = range(nframes)
+  raw_array = np.zeros(N*nframes,float)
+  for j in range(nframes):
+    i = j*N
+    while i < j*N+N:
+      bytes = in_file.read(1)
+      raw_array[i] = float(struct.unpack('B',bytes)[0])
+      i+=1
+  in_file.close()    
+  return frames,raw_array.reshape((nframes,nx,ny))
+
+#---------------------------
+
+def readc2file(args):
+  import struct
+
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set the number of frames:
+  N = nx*ny
+  file_bytes = os.path.getsize(args.input)
+  nframes = int(file_bytes/(N*2))
+  print(' Number of frames generated: ',nframes)
+
+  frames = range(nframes)
+  raw_array = np.zeros(N*nframes,float)
+  for j in range(nframes):
+    i = j*N
+    while i < j*N+N:
+      bytes1 = in_file.read(1)
+      bytes2 = in_file.read(1)
+      b1=int(struct.unpack('B',bytes1)[0])
+      b2=int(struct.unpack('B',bytes2)[0])
+      raw_array[i] = float(b1*256+b2)
+      i+=1
+  in_file.close()    
+  return frames,raw_array.reshape((nframes,nx,ny))
+
+#---------------------------
+
+def readr4file(args):
+
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set whether to read a time or not:
+  if not(args.notime):
+    itime=1
+  else:
+    itime=0     
+  # Set the number of frames:
+  file_bytes = os.path.getsize(args.input)
+  N = nx*ny  
+  nframes = int(file_bytes/((N+itime)*4))
+  print(' Number of frames generated: ',nframes)
+  frames = range(nframes)
+  raw_array = np.fromfile(in_file,dtype=np.float32)
+  out_array = np.empty((nframes,nx,ny))
+  for i in frames:
+    out_array[i,:,:] = raw_array[i*(N+itime)+itime:(i+1)*(N+itime)+1-itime].reshape(nx,ny)
+  in_file.close()    
+  return frames,out_array
+
+#---------------------------
+
+def readi2file(args):
+
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set the number of frames:
+  file_bytes = os.path.getsize(args.input)
+  N = nx*ny  
+  nframes = int(file_bytes/(N*2))
+  print(' Number of frames generated: ',nframes)
+  frames = range(nframes)
+  raw_array = np.fromfile(in_file,dtype=np.dtype('u2'))+2**15-1
+  in_file.close()    
+  return frames,raw_array.reshape((nframes,nx,ny))
+
+#---------------------------
+
+def readr8file(args):
+
+  # Open input file:
+  try:
+    in_file = open(args.input,'r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]*args.mult
+  ny = args.ndim[1]*args.mult
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set whether to read a time or not:
+  if not(args.notime):
+    itime=1
+  else:
+    itime=0     
+  # Set the number of frames:
+  file_bytes = os.path.getsize(args.input)
+  N = nx*ny
+  nframes = int(file_bytes/((N+itime)*8))
+  print(' Number of frames generated: ',nframes)
+  frames = range(nframes)
+  raw_array = np.fromfile(in_file,dtype=np.float64)
+  out_array = np.empty((nframes,nx,ny),dtype=np.float64)
+  for i in frames:
+    out_array[i,:,:] = raw_array[i*(N+itime)+itime:(i+1)*(N+itime)+1-itime].reshape(nx,ny)
+  in_file.close()    
+  return frames,out_array
+
+#---------------------------
+
+def get_colourmap():
+  cmap_file = open(os.path.join(graphicsdir,'colourmap'),'r')
+  cmap_list = []
+  istart=1024
+  iend=256**2-istart
+  for i in range(istart):
+    file_line = cmap_file.readline().split()
+  for i in range(iend+1):
+    file_line = cmap_file.readline().split()
+    a,b,c = file_line[0],file_line[1],file_line[2]
+    ele = (float(a),float(b),float(c))
+    cmap_list.append(ele)
+  stamap = clrs.LinearSegmentedColormap.from_list('amap',cmap_list,N=iend-istart+1)
+  plt.register_cmap(cmap=stamap)
+  return {'stamap':stamap,'jet':plt.cm.jet,'autumn':plt.cm.autumn,'winter':plt.cm.winter,'spring':plt.cm.spring,
+          'summer':plt.cm.summer,'hot':plt.cm.hot,'bone':plt.cm.bone,'cool':plt.cm.cool,'copper':plt.cm.copper,
+          'gray':plt.cm.gray,'hsv':plt.cm.hsv,'spectral':plt.cm.spectral,'prism':plt.cm.prism,'pink':plt.cm.pink,
+          'flag':plt.cm.flag}
+
+#---------------------------
+
+def get_coords(args):
+
+  # Open input file:
+  try:
+    in_file = open('coords.r8','r')# try opening passed filename  
+  except IOError, message:# error if file not found 
+    print(' File could not be opened')
+    sys.exit()
+
+  # Set up grid point numbers
+  nx = args.ndim[0]
+  ny = args.ndim[1]
+
+  # Add extra points for aperiodic codes
+  if args.x0:
+    nx = nx+1
+  if args.y0:
+    ny = ny+1
+
+  # Set whether to read a time or not:
+  itime=1
+  # Set the number of frames:
+  file_bytes = os.path.getsize('coords.r8')
+  N = nx*ny
+  nframes = int(file_bytes/((N+itime)*8))
+  frames = range(nframes)
+  raw_array = np.fromfile(in_file,dtype=np.float64)
+  out_array = np.empty((nframes,nx,ny),dtype=np.float64)
+  for i in frames:
+    out_array[i,:,:] = raw_array[i*(N+itime)+itime:(i+1)*(N+itime)+1-itime].reshape(nx,ny)
+  in_file.close()    
+
+  return out_array[0],out_array[1]
+
+#---------------------------
+
+def show_frames(frames,X,Y,main_array,args,cmap_val,lev_mins,lev_maxs):
+  def draw_frame(event):
+    global im,glob_cmap_val,cb
+    axes=event.canvas.figure.get_axes()[0]
+    xlim=axes.get_xlim()
+    ylim=axes.get_ylim()
+    axes.clear()
+#    im.remove
+    im=axes.pcolormesh(X,Y,main_array[frame],cmap=glob_cmap_val,vmin=lev_mins[frame],vmax=lev_maxs[frame])
+    if args.noticks:
+      ax.set_xticklabels([])
+      ax.set_yticklabels([])
+    axes.set_title('Frame no.: %s ;  Min/Max %5.3e/%5.3e' %(frame+1,main_array[frame].min(),main_array[frame].max()))
+    if args.notitle:
+      ax.set_title('')
+    #if args.cb:
+    #  plt.colorbar(im)
+    axes.set_xlim(xlim)    
+    axes.set_ylim(ylim)
+    axes.set_aspect(1.0)
+    fig.canvas.draw()
+    return
+    
+  def on_press(event):
+    global keys,frame,nframes
+    if event.key not in 'lcsfh':
+      keys.add(event.key)  
+    if len(keys) == 1 and '=' in keys:
+      frame = (frame+1+nframes) % nframes
+      draw_frame(event)
+    if len(keys)==1 and '-' in keys:
+      frame = (frame-1+nframes) % nframes
+      draw_frame(event)
+    if len(keys)==1 and '1' in keys:
+      frame = int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '2' in keys:
+      frame = 2*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '3' in keys:
+      frame = 3*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '4' in keys:
+      frame = 4*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '5' in keys:
+      frame = 5*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '6' in keys:
+      frame = 6*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '7' in keys:
+      frame = 7*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '8' in keys:
+      frame = 8*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '9' in keys:
+      frame = 9*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '0' in keys:
+      frame = 0
+      draw_frame(event)
+    if 'r' in keys:
+      keys.clear()
+      keys.add('r')
+    return
+      
+  def on_release(event):
+    global keys
+    keys.remove(event.key)  
+    return
+  
+  global frame,keys,im,nframes,glob_cmap_val,cb
+  glob_cmap_val=cmap_val
+  nframes=len(frames)
+  keys=set()
+  if args.frame <= nframes:
+    frame=args.frame-1
+  else:
+    print(' Cannot start at the specified frame as fewer frames are found')
+    frame=0
+
+  # Make a plot figure:
+  fig = plt.figure(1)
+  ax = fig.add_subplot(111)	
+  im = ax.pcolormesh(X,Y,main_array[frame],cmap=cmap_val,vmin=lev_mins[frame],vmax=lev_maxs[frame])
+  ax.set_xlim(X.min(),X.max())  
+  # Set x & y axes limits:
+  if args.xlims:
+    ax.set_xlim(args.xlims)  
+  if args.ylims:
+    ax.set_ylim(args.ylims)
+
+  # Set ticks or not:
+  if args.noticks:
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+
+  # Set title to display frame no.
+  ax.set_title('Frame no.: %s ;  Min/Max %5.3e/%5.3e' %(frame+1,main_array[frame].min(),main_array[frame].max()))
+  if args.notitle:
+    ax.set_title('')
+
+  # Add a colour bar
+  if args.cb:
+    cb=plt.colorbar(im)
+
+  ax.set_aspect(1.0)
+
+
+  # Connect key presses to event handlers:
+  cid=fig.canvas.mpl_connect('key_press_event',on_press)
+  cid2=fig.canvas.mpl_connect('key_release_event',on_release)
+      
+  # Close the individual figure
+  plt.show()
+
+#========================================
+#============main code===================
+
+if __name__ == '__main__':
+  # Read and parse command line arguments
+
+  args = parse_args()
+
+  # Open input file and read in main
+  # array for plotting
+  suffix = args.input.split('.')[-1]
+
+  if suffix == 'dat' or suffix == 'asc':
+    print(' Reading formatted text input file')
+    frames,main_array = readtxtfile(args)
+  elif suffix == 'r4':
+    print(' Reading real input file')
+    frames,main_array = readr4file(args)
+  elif suffix == 'r8':
+    print(' Reading double precision input file')
+    frames,main_array = readr8file(args)
+  elif suffix == 'i2':
+    print(' Reading short integer input file')
+    frames,main_array = readi2file(args)
+  elif suffix == 'i4':
+    print(' Reading integer input file')
+    frames,main_array = readi4file(args)
+  elif suffix == 'c1':
+    print(' Reading single character input file')
+    frames,main_array = readc1file(args)
+  elif suffix == 'c2':
+    print(' Reading two character input file')
+    frames,main_array = readc2file(args)
+  else:
+    print(' Not sure what the file format is')
+    print(' based on the extension --- default to formatted text')
+    frames,main_array = readtxtfile(args)
+
+  # Set saved image dpi
+  mpl.rcParams['savefig.dpi'] = args.dpi
+
+  # Get colourmaps:
+  cmaps = get_colourmap()
+ 
+  # Get colourmap value from cmap dict
+  cmap_val = cmaps.get(args.cmap)
+   
+  # Get coordinates:
+  X,Y = get_coords(args)
+
+  # Set frame min/max for colour scaling:
+  lev_mins=[]
+  lev_maxs=[]
+
+  if args.lims:
+    lev_min = args.lims[0]
+    lev_max = args.lims[1]
+    lev_mins=[lev_min for frame in frames]
+    lev_maxs=[lev_max for frame in frames]
+  else:
+    if args.glob:
+      if args.mod:        
+        lev_max = max(abs(main_array.min()),abs(main_array.max()))
+        lev_min = -lev_max
+      else:
+        lev_min = main_array.min()
+        lev_max = main_array.max()    
+      lev_mins=[lev_min for frame in frames]
+      lev_maxs=[lev_max for frame in frames]
+    else:
+      if args.mod:
+        for frame in frames:
+          lev_max = max(abs(main_array[frame].min()),abs(main_array[frame].max()))
+          lev_min = -lev_max
+          lev_mins.append(lev_min)
+          lev_maxs.append(lev_max)
+      else:
+        for frame in frames:
+          lev_min = main_array[frame].min()
+          lev_max = main_array[frame].max()    
+          lev_mins.append(lev_min)
+          lev_maxs.append(lev_max)
+  # Pass control to subroutines controlling image
+  # viewing:
+  show_frames(frames,np.around(X,decimals=7),np.around(Y,decimals=7),main_array[:,::args.skip,::args.skip],args,cmap_val,lev_mins,lev_maxs)

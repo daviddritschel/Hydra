@@ -1,0 +1,37 @@
+#!/usr/bin/env csh
+
+#============================================================================#
+#            Job setup script for an elliptical vortex patch
+#============================================================================#
+set datagen = "ellipse"
+
+set pi=3.14159265358979323846
+
+# Data generation routine specific parameters:
+set rad=`echo "scale=12; 5 * $pi / 32" | bc -l`  # Mean radius of the vortex
+set asp="1.0"                                    # y:x aspect ratio
+
+#==========================================================================
+echo ' We start with an ellipse x^2/a^2 + y^2/b^2 < 1 within which q = 4*pi'
+
+echo
+echo -n ' Mean radius, R = sqrt(a*b) (default' $rad')? '
+set var=$<
+if ($var != "") set rad=$var
+
+echo -n ' Aspect ratio, b/a (default' $asp')? '
+set var=$<
+if ($var != "") set asp=$var
+
+echo '  Ellipse with a PV distribution' >> job_info
+echo '  q = 4*pi*(1 - x^2/a^2 - y^2/b^2)' >> job_info
+echo ' ' >> job_info
+echo '  Mean radius, R = sqrt(a*b):        ' $rad >> job_info
+echo '  Aspect ratio, b/a:                 ' $asp >> job_info
+
+cat << /EOF > in_$datagen
+$rad
+$asp
+/EOF
+
+$datagen < in_$datagen > out_$datagen

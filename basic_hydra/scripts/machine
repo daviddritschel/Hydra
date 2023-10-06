@@ -1,0 +1,35 @@
+#!/usr/bin/env csh
+
+# Works out the generic machine type as one of the following:
+# (1) gfortran [64 bit processor]
+# (2) intel    [64 bit processor]
+# (3) intel32  [32 bit processor]
+# (4) opteron
+
+# Change the machine names below for your local environment, and add
+# more options if required.
+
+# Get hostname:
+set host = `hostname | awk -F. '{print $(1)}'`
+
+if ( ($host == storm2) || ($host == storm3) || ($host == storm4) || ($host == storm5) || ($host == storm6) || ($host == storm7) || ($host == storm10) || ($host == storm11) || ($host == storm12) || ($host == storm13) || ($host == storm14) || ($host == storm15) || ($host == fortran1) || ($host == andrea) || ($host == wave1) || ($host == wave2) || ($host == wave3) || ($host == wave4) || ($host == wave5) || ($host == cyclone) || ($host == dritschel) ) then
+# 64 bit machines running gfortran:
+
+   echo 'gfortran'
+
+else if ( ($host == heton) || ($host == vortex) || ($host == storm1) || ($host == storm2) || ($host == storm3) || ($host == storm4) || ($host == storm5) || ($host == storm6) || ($host == storm7) || ($host == storm8) || ($host == storm9) ||($host == monsoon) || ($host == tornado) || ($host == twister) ) then
+# 64 bit machines running intel fortran:
+
+   echo 'intel'
+
+else if ( ($host == lamborghini) || ( $host == hurricane ) ) then
+# 32 bit machines running intel fortran:
+
+   echo 'intel32'
+
+else if ( $host == spin ) then
+# 64 bit opteron processor:
+
+   echo 'opteron'
+
+endif

@@ -1,0 +1,60 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the vort initial condition
+#=========================================================================#
+set datagen = "vort"
+
+# Set fixed constants:
+set pi=3.14159265358979
+set twopi=`echo "scale=10; 2 * $pi" | bc -l`
+
+#==========================================================================
+# Defaults:
+set height=0.5
+set trans=0.02
+set xcen=0.5
+set ycen=0.5
+set amp=1.0
+set scale=1.0
+
+echo ' We start with a region of fluid of higher density.'
+echo -n ' Height of the higher density zone (default' $height')? '
+set var=$<
+if ($var != "") set height=$var
+echo -n ' Width of the density transition zone (default' $trans')? '
+set var=$<
+if ($var != "") set trans=$var
+echo ' An initial Gaussian vortex is located in the domain.'
+echo -n ' Location of centre of vortex in x (default' $xcen')?'
+set var=$<
+if ($var != "") set xcen=$var
+echo -n ' Location of centre of vortex in y (default' $ycen')?'
+set var=$<
+if ($var != "") set ycen=$var
+echo -n ' Amplitude of the vortex (default' $amp')? '
+set var=$<
+if ($var != "") set amp=$var
+echo -n ' Scale length of the vortex (default' $scale')? '
+set var=$<
+if ($var != "") set scale=$var
+
+echo ' ' >> job_info
+echo ' Dense region height:                     ' $height >> job_info
+echo ' Dense region transition:                 ' $trans >> job_info
+echo ' Vortex x centre:                         ' $xcen >> job_info
+echo ' Vortex y centre:                         ' $ycen >> job_info
+echo ' Vortex amplitude:                        ' $amp >> job_info
+echo ' Vortex scale length:                     ' $scale >> job_info
+
+cat << /EOF > in_$datagen
+
+$height
+$trans
+$xcen
+$ycen
+$amp
+$scale
+/EOF
+
+$datagen < in_$datagen > out_$datagen

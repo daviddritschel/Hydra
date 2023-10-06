@@ -1,0 +1,216 @@
+#!/usr/bin/env python
+
+# This code is for plotting up the results of the post-processing
+# routine jets.f90.
+
+#=====perform the various imports========
+#=======needed by the main code==========
+import sys,os,warnings
+# Set various locations for the hydra tree structure:
+uname=os.getlogin()
+homedir=os.getenv('HOME')
+rootdir=os.path.join(homedir,'hydra','scripts')
+moddir=os.path.join(rootdir,'modules')
+graphicsdir=os.path.join(rootdir,'graphics')
+sys.path.append(moddir)
+import numpy as np
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+import matplotlib.colors as clrs
+# Set default plot save resolution to a high value:
+mpl.rcParams['savefig.dpi'] = 800
+warnings.simplefilter("ignore",DeprecationWarning)
+
+#========================================
+#=====various function definitions=======
+#========================================
+
+def get_ny():
+  # This routine reads the src/parameters.f90 file
+  # to obtain the vertical resolution of the run ny.
+  # This is done by using a simple regexp.
+  # It returns an integer with value ny.
+
+  import re
+
+  # Open input file:
+  try:
+    in_file = open('src/parameters.f90','r')# try opening filename  
+  except IOError, message:# error if file not found 
+    print >> sys.stderr, ' File could not be opened', message
+    sys.exit()
+  # Read the file into a list of strings and close it:
+  param_file=in_file.readlines()
+  in_file.close()
+
+  # Make a list of all strings matching the given regexp: 
+  comprehend=[]
+  for line in param_file:
+    comprehend.append(re.findall('(?<=ny=)\d+',line))
+  # Trim the list, select an element, convert to integer and return it.
+  comprehend=[comp for comp in comprehend if comp!=[]]
+  return int(comprehend[0][0])
+
+
+def readr4file(N,bt):
+  # This routine files of the type yeq.r4 trimming out the header lines 
+  # as necessary. it returns two arrays, on a simple list of the frame number, 
+  # the second a large array containing the fields for plotting.
+
+  # Open input file:
+  try:
+    in_file = open('diagnostics/yeq.r4','r')# try opening filename  
+  except IOError, message:# error if file not found 
+    print >> sys.stderr, ' File could not be opened', message
+    sys.exit()
+
+  # Set the number of frames by finding the filesize:
+  file_bytes = os.path.getsize('yeq.r4')
+  nframes = int(file_bytes/((4*N+1)*4))
+  print ' Number of frames generated: %d' %nframes
+  frames = range(nframes)
+  # Get the raw data from the file in a large 1d array:
+  raw_array = np.fromfile(in_file,dtype=np.float32)
+  tim_eles = [i*(4*N+1) for i in frames]
+  in_file.close()    
+  # Return the array with header lines deleted and reshaped to a suitable shape:
+  if bt:
+    return frames,np.delete(raw_array,tim_eles).reshape((nframes,4,N))[:,0:2,:]
+  else:
+    return frames,np.delete(raw_array,tim_eles).reshape((nframes,4,N))[:,2:4,:]
+
+#---------------------------
+
+def show_frames(frames,main_array,maxs):
+  # Main routine for running the open window with plots which may be evolved by using the -/= keys.
+  # Number 0-9 jump the plot to points in the evolution
+
+  def draw_frame(event):
+    # Routine re-draws the frame after a keypress event:
+    global a1,extent,glob_cmap_val,cb
+    axes=event.canvas.figure.get_axes()[0]
+    # Clear axes ready for re-plot
+    axes.clear()
+    # Re-plot the relevant frame:
+    a1 = axes.plot(main_array[frame][0],main_array[frame][1]/maxs[1],'b')
+    # Reset title:
+    axes.set_title('Frame No.: %i' %frame)
+    # Reset limits to ensure they are fixed:
+    axes.set_xlim(0,1)
+    axes.set_ylim(-1,1)
+    # Finally redraw and return
+    fig.canvas.draw()
+    return
+    
+  def on_press(event):
+    # This routine deals with tracjing keypress events.
+    # It keeps track of the current key presses and triggers redraws 
+    # of the plot window as necessary.
+    # Keys -/= (ie -/+ without the shift key) cycle forward and back through frames.
+    # The keys 0-9 jump to 10-90% of the total frames directly.
+    # The 'r' key is the reset key in case of any weirdness adding to the keypress list.
+    global keys,frame,nframes
+    if event.key not in 'lcsfh':
+      keys.add(event.key)  
+    if len(keys) == 1 and '=' in keys:
+      frame = (frame+1+nframes) % nframes
+      draw_frame(event)
+    if len(keys)==1 and '-' in keys:
+      frame = (frame-1+nframes) % nframes
+      draw_frame(event)
+    if len(keys)==1 and '1' in keys:
+      frame = int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '2' in keys:
+      frame = 2*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '3' in keys:
+      frame = 3*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '4' in keys:
+      frame = 4*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '5' in keys:
+      frame = 5*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '6' in keys:
+      frame = 6*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '7' in keys:
+      frame = 7*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '8' in keys:
+      frame = 8*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '9' in keys:
+      frame = 9*int(nframes/10)
+      draw_frame(event)
+    if len(keys)==1 and '0' in keys:
+      frame = 0
+      draw_frame(event)
+    if 'r' in keys:
+      keys.clear()
+      keys.add('r')
+    return
+      
+  def on_release(event):
+    # Routine removes keys from the keypress set
+    global keys
+    keys.remove(event.key)  
+    return
+
+  # Main plotting routine. This initiates a plot window 
+  # and makes connections to handlers for key presses. 
+  
+  global frame,keys,im,nframes
+  # Initialise various properties:
+  nframes=len(frames)
+  keys=set()
+  frame=0
+
+  # Make an initial plot figure:
+  fig = plt.figure(1)
+  ax = fig.add_subplot(111)	
+  a1 = ax.plot(main_array[frame][0],main_array[frame][1]/maxs[1],'b')
+  # Set title and x & y limits of (rescaled) plot:
+  ax.set_title('Frame No.: %i' %frame)
+  ax.set_xlim(0,1)
+  ax.set_ylim(-1,1)
+  # Connect key presses to event handlers:
+  cid=fig.canvas.mpl_connect('key_press_event',on_press)
+  cid2=fig.canvas.mpl_connect('key_release_event',on_release)
+      
+  # Close the individual figure
+  plt.show()
+
+#========================================
+#============main code===================
+
+if __name__ == '__main__':
+  # Main code that drives everything above:
+  print ' Reading real input file'
+  # Obtain the case to plot, either bt or bc parts:
+  print ' Enter layer (1 for lower, 2 for upper) '
+  try: 
+    iopt=int(raw_input('>')) 
+    if iopt != 1 and iopt != 2:
+      print 'Not a valid input'
+      sys.exit()
+  except ValueError:
+    print 'Not a valid input'
+    sys.exit()
+  bt=True
+  if iopt == 2:
+    bt=False 
+  # Obtain the array dimension (ny):
+  N=get_ny()
+  # Read the main array for plotting:
+  frames,main_array = readr4file(N,bt)
+  # Get the x scales for the plots, these are used to rescale the horizontal axis 
+  # of each of the plotted curves: 
+  maxs=[]
+  for i in range(2):
+    maxs.append(max(abs(main_array[:,i].min()),abs(main_array[:,i].max())))
+  # Pass control to subroutines controlling image
+  # viewing:
+  show_frames(frames,main_array,maxs)

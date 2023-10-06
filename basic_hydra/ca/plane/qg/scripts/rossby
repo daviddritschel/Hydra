@@ -1,0 +1,41 @@
+#!/usr/bin/env csh
+
+#====================================#
+# Job setup script for a Rossby wave
+#====================================#
+set datagen = "rossby"
+
+# Data generation routine specific parameters:
+set a  =  "1.0"    # Wave amplitude
+set kx =   "2"     # x wavenumber
+set ky =   "1"     # y wavenumber
+
+#==========================================================================
+echo ' The PV is given by  q = beta[y+a*sin(nkx+mly)]  where'
+echo ' where k = 2*pi/L_x and l = 2*pi/L_y.'
+echo
+echo -n ' Displacement amplitude, a (default' $a')? '
+set var=$<
+if ($var != "") set a=$var
+
+echo -n ' x wavenumber, n (default' $kx')? '
+set var=$<
+if ($var != "") set kx=$var
+
+echo -n ' y wavenumber, m (default' $ky')? '
+set var=$<
+if ($var != "") set ky=$var
+
+echo '  Rossby wave with' >> job_info
+echo '  q = beta[y+a*sin(nkx+mly)]' >> job_info
+echo ' ' >> job_info
+echo '  Displacement amplitude, a:         ' $a >> job_info
+echo '  x wavenumber, n:                   ' $kx >> job_info
+echo '  y wavenumber, m:                   ' $ky >> job_info
+
+cat << /EOF > in_$datagen
+$a
+$kx $ky
+/EOF
+
+$datagen < in_$datagen > out_$datagen

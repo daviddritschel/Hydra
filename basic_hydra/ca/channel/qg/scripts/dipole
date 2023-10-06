@@ -1,0 +1,12 @@
+#!/usr/bin/env csh
+
+#========================================#
+# Job setup script for an dipolar vortex
+#========================================#
+set datagen = "dipole"
+
+echo '  Larichev-Reznik dipile' >> job_info
+echo ' ' >> job_info
+echo '  Radius, R = 1, and propagation speed, c = 0.1' >> job_info
+
+$datagen

@@ -1,0 +1,42 @@
+#!/usr/bin/env csh
+
+#============================================================================#
+# Runs diffview on any selected pair of fields in the evolution subdirectory
+#============================================================================#
+
+set n=$#argv
+
+if ($n == 0 || $n == 1) then
+   echo
+   echo '  Usage:   ddv <field1> <field2> <options>'
+   echo
+   echo '  Shows the difference, field1 - field2.'
+   echo
+   echo '  Examples:'
+   echo
+   echo '  ddv qq jj'
+   echo '  ddv qq jj -mod'
+   echo '  ddv qq jj -lims -0.001 0.001'
+   echo '  ddv qq jj -notitle -cb'
+   echo
+   echo '  (For all options, just type "diffview")'
+   echo
+   exit (-1)
+else
+   set f1=$1
+   set f2=$2
+endif
+
+# Get resolution in x & y:
+set nx = `grep "nx=" src/parameters.f90 | awk -F= '{print $(NF-1)}' | awk -F, '{print $1}'`
+set ny = `grep "ny=" src/parameters.f90 | awk -F= '{print $(NF)}'`
+
+if ($n != 2) then
+   # Remove first two elements of argument list <field> to get <options>:
+   shift
+   shift
+   diffview -ndim $nx $ny {evolution/}$f1{.r4} {evolution/}$f2{.r4} $argv &
+else
+   diffview -ndim $nx $ny {evolution/}$f1{.r4} {evolution/}$f2{.r4} &
+endif
+

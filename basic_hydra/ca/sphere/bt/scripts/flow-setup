@@ -1,0 +1,481 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the ellipsoidal barotropic class of f90 codes
+#=========================================================================#
+
+echo
+echo '-----------------------------------------------------------------'
+echo ' The ellipsoid-of-revolution barotropic contour advection method '
+echo '-----------------------------------------------------------------'
+
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry (use "sphere" despite it being an ellipsoid of rev):
+set geom="sphere"
+# Specify model equation type:
+set equa="bt"
+
+# Ask for code version (typically OpenMP or not):
+echo
+echo    ' Which version of the code should be used?'
+echo    '    (1) Serial Combined Lagrangian Advection Method,'
+echo    '    (2) OpenMP    "         "          "       "   ,'
+echo    '    (3) Serial Contour Advection (CASL) only, or'
+echo -n '    (4) OpenMP    "         "       "     "   -   (default 1)? '
+set version=$<
+if ($version == "") set version="1"
+
+if ($version == "1") then
+   set algo="caps"
+   set copts0=""
+else if ($version == "2") then
+   set algo="omp_caps"
+   set nthreads="6"
+   echo -n ' Number of threads (default' $nthreads')? '
+   set var=$<
+   if ($var != "") set nthreads=$var
+   set copts0="-DNUM_THREADS=$nthreads"
+else if ($version == "3") then
+   set algo="casl"
+   set copts0=""
+else if ($version == "4") then
+   set algo="omp_casl"
+   set nthreads="6"
+   echo -n ' Number of threads (default' $nthreads')? '
+   set var=$<
+   if ($var != "") set nthreads=$var
+   set copts0="-DNUM_THREADS=$nthreads"
+else
+   echo ' *** Not a valid option.  Exiting.'
+   exit (-1)
+endif    
+
+#==========================================================================
+# The following is totally generic!
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set workdir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $workdir)) mkdir $workdir
+set workdir=$workdir/hydra
+if (!(-d $workdir)) mkdir $workdir
+set basedir=$workdir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$workdir/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Default number of bytes representing a single character:
+set n_b_p_c=1   #This is the value valid for gfortran
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+#==========================================================================
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+echo
+echo ' *** Job will be built in the temporary directory '
+echo $tmpdir
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+
+#==========================================================================
+# Set fixed constants:
+set pi=3.14159265358979
+set twopi=`echo "scale=10; 2 * $pi" | bc -l`
+set fourpi=`echo "scale=10; 4 * $pi" | bc -l`
+
+#==========================================================================
+# Get the data generation routine to be used:
+set dataopt="0"
+echo
+echo ' Choose one of the following flow initialisation methods:'
+echo ' (0) a single vortex patch,'
+echo ' (1) a Bickley jet,'
+echo ' (2) multiple Bickley jets,'
+echo ' (3) take data from' $workdir/$meth/$geom/$equa/initial_data
+echo ' (4) stochastic vorticity forcing starting from a state of rest,'
+echo -n ' (5) initially random relative vorticity - (default' $dataopt')? '
+set var=$<
+if ($var != "") set dataopt=$var
+
+# Set defaults for each data generation type:
+if ($dataopt == "0") then 
+   set datagen = "patch"
+   set asp="0.5"      # Surface vertical:horizontal aspect ratio
+   set ng="256"       # Number of latitudes
+   set omega="0.0"    # Planetary rotation rate
+   if ( ($version == "1") || ($version == "2") ) then
+      # CAPS defaults:
+     set forcing = "n"
+     set damping = "n"
+     set nq="64"        # Number of contours used to represent PV
+     set dq="0.2"       # Vorticity jump across all contours
+     set rekman="0.0"   # Eckman damping coefficient 
+     set esr="0.0"      # Enstrophy injection rate
+     set ksr="1"        # Centroid wavenumber of enstrophy injection
+     set t_save="0.5"   # Coarse grid save time-interval
+     set t_sim="5.0"    # Residual and contour save time-interval (a period)
+     set n_period="40"  # Number of periods to run 
+     echo "1" > option  # This file is needed by the patch script
+   else
+      # CASL defaults:
+     set dq=$fourpi     # Vorticity jump across all contours
+     set t_step="0.02"  # Fixed time step
+     set n_steps="25"   # Number of time steps per data save (per period)
+     set n_period="400" # Number of periods to run
+     echo "2" > option  # This file is needed by the patch script
+   endif
+
+else if ($dataopt == "1") then 
+   set datagen = "bickley"
+   set forcing = "n"
+   set damping = "n"
+   set asp="1.0"      # Surface vertical:horizontal aspect ratio
+   set ng="256"       # Number of latitudes
+   set nq="128"       # Number of contours used to represent PV
+   set omega=$twopi   # Planetary rotation rate
+   set t_save="0.25"  # Coarse grid save time-interval
+   set t_sim="1.0"    # Fine grid residual and contour save time-interval
+   set n_period="20"  # Number of t_sim periods to run 
+   set rekman="0.0"   # Eckman damping coefficient 
+   set esr="0.0"      # Enstrophy injection rate
+   set ksr="16"       # Centroid wavenumber of enstrophy injection
+
+else if ($dataopt == "2") then 
+   set datagen = "staircase"
+   set forcing = "n"
+   set damping = "n"
+   set asp="1.0"
+   set ng="256"       
+   set nq="128"       
+   set omega=$twopi
+   set t_save="0.25"  
+   set t_sim="2.0"    
+   set n_period="40"  
+   set rekman="0.0"   
+   set esr="0.0"      
+   set ksr="1"        
+
+else if ($dataopt == "3") then 
+   set datagen = "diy"
+   set forcing = "n"
+   set damping = "n"
+   set asp="1.0"
+   set ng="256"
+   set dq="0.1" # Here we must set the PV jump
+   set omega="0.0"
+   set t_save="2.0"
+   set t_sim="20.0"
+   set n_period="200"
+   set rekman="0.0" 
+   set esr="0.0" 
+   set ksr="1" 
+
+else if ($dataopt == "4") then 
+   set datagen = "rest-state"
+   set forcing = "y"
+   set damping = "y"
+   set asp="1.0"
+   set ng="256"
+   set nq="128"
+   set omega=$twopi
+   set t_save="2.0"
+   set t_sim="20.0"
+   set n_period="50"
+   set rekman="0.0" 
+   set esr="0.1" 
+   set ksr="16" 
+
+else if ($dataopt == "5") then 
+   set datagen = "ranvor"
+   set forcing = "n"
+   set damping = "n"
+   set asp="1.0"
+   set ng="256"
+   set nq="128"
+   set omega=$twopi
+   set t_save="2.0"
+   set t_sim="20.0"
+   set n_period="50"
+   set rekman="0.0" 
+   set esr="0.0" 
+   set ksr="16" 
+
+else 
+   echo ' Not a valid choice - exiting...'
+   /bin/rm -r $tmpdir  
+   exit(-1)
+endif
+
+#==========================================================================
+# Choose basic physical parameters:
+echo
+echo -n ' Vertical:horizontal aspect ratio of surface, b (default' $asp')? '
+set var=$<
+if ($var != "") set asp=$var
+
+echo ' Surface aspect ratio, b:            ' $asp >> job_info
+echo ' Planetary rotation rate, omega:     ' $omega >> job_info
+
+# Set basic grid resolution:
+echo
+echo ' A longitude-latitude grid of dimensions 2*ng x ng is used.'
+echo -n ' Number of latitudes, ng (default' $ng')? '
+set var=$<
+if ($var != "") set ng=$var
+
+echo ' ' >> job_info
+echo ' Horizontal grid resolution, ng:     ' $ng >> job_info
+
+# Latitudinal grid spacing:
+set gl=`echo "$pi / $ng" | bc -l`
+
+#============================================================
+if ( ($version == "1") || ($version == "2") ) then
+   # Set the PV jump across contours (CAPS only):
+   echo
+   if ($omega == "0.0") then
+     echo -n ' PV jump across all contours (default' $dq')? '
+     set var=$<
+     if ($var != "") set dq=$var
+   else
+     echo -n ' Number of PV jumps used in the range q_min to q_max initially (default' $nq')? '
+     set var=$<
+     if ($var != "") set nq=$var
+     set dq=`echo "scale=12; 4*$omega/$nq" | bc -l`
+   endif
+endif
+
+echo ' ' >> job_info
+echo ' PV jump across all contours, dq:    ' $dq >> job_info
+
+#==========================================================================
+# Set numerical parameters:
+
+if ( ($version == "1") || ($version == "2") ) then
+   # CAPS parameters:
+
+   #-------------------------------------------------------------------
+   # Data save frequency:
+   echo
+   echo -n ' Time interval between data saves (default' $t_save')? '
+   set var=$<
+   if ($var != "") set t_save=$var
+
+   echo ' Time interval between data saves:   ' $t_save >> job_info
+
+   #-------------------------------------------------------------------
+   # Duration of each simulation period
+   echo -n ' Duration of each simulation period (default' $t_sim')? '
+   set var=$<
+   if ($var != "") set t_sim=$var
+
+   echo ' Duration of each simulation period: ' $t_sim >> job_info
+
+   #-------------------------------------------------------------------
+   # Total number of periods:
+   echo -n ' Total number of periods to run (default' $n_period')? '
+   set var=$<
+   if ($var != "") set n_period=$var
+
+   echo ' Total number of periods to run:     ' $n_period >> job_info
+
+   #-------------------------------------------------------------------
+   # Maximum allowed time step:
+   set dt_max=`echo "scale=8; $t_save / 10" | bc -l`
+   echo -n ' Maximum time step to use (default' $dt_max')? '
+   set var=$<
+   if ($var != "") set dt_max=$var
+   echo ' Maximum time step:                  ' $dt_max >> job_info
+
+   # Residual PV bi-harmonic hyperviscous damping rate per day on wavenumber ng
+   # is cdamp*zz_rms:
+   set cdamp=2.0
+   echo
+   echo ' The residual vorticity is damped by bi-harmonic hyperviscosity at a'
+   echo -n ' rate C*zeta_rms.  Damping coefficient C (default' $cdamp')? '
+   set var=$<
+   if ($var != "") set cdamp=$var
+
+   #-------------------------------------------------------------------
+   # Set Ekman damping:
+   if ($damping == "y") then 
+      echo
+      echo -n ' Ekman damping rate, r_ek (default' $rekman')? '
+      set var=$<
+      if ($var != "") set rekman=$var
+   
+      echo ' ' >> job_info
+      echo ' Ekman damping rate:                 ' $rekman >> job_info
+   endif
+
+   # Set stochastic forcing parameters:
+   if ($forcing == "y") then 
+      echo
+      echo ' The enstrophy forcing spectrum is proportional to k^5*exp(-2k^2/k_0^2).'
+
+      echo
+      echo -n ' Wavenumber centroid k_0 of enstrophy injection (default' $ksr')? '
+      set var=$<
+      if ($var != "") set ksr=$var
+
+      echo
+      echo -n ' Enstrophy injection rate (default' $esr')? '
+      set var=$<
+      if ($var != "") set esr=$var
+
+      echo ' ' >> job_info
+      echo ' Enstrophy injection rate:           ' $esr   >> job_info
+      echo ' Enstrophy injection wavenumber:     ' $ksr   >> job_info
+   else
+      if ($dataopt == "5") then 
+         echo
+         @ ksr = ( $ng / 16 )
+         echo -n ' Characteristic wavenumber of initial perturbation (default' $ksr')? '
+         set var=$<
+         if ($var != "") set ksr=$var
+
+         echo ' ' >> job_info
+         echo ' Char. wavenumber of initial pert.:  ' $ksr   >> job_info
+      endif
+   endif
+
+else
+   # CASL parameters:
+   echo -n ' Time step to use (default' $t_step')? '
+   set var=$<
+   if ($var != "") set t_step=$var
+   echo ' Maximum time step:                  ' $t_step >> job_info
+
+   echo -n ' Number of time steps per data save (default' $n_steps')? '
+   set var=$<
+   if ($var != "") set n_steps=$var
+
+   echo ' Number of time steps per data save: ' $n_steps >> job_info
+
+   echo -n ' Total number of periods to run (default' $n_period')? '
+   set var=$<
+   if ($var != "") set n_period=$var
+
+   echo ' Total number of periods to run:     ' $n_period >> job_info
+endif
+
+#============================================================
+# Build parameter file with cpp and make all codes:
+
+# Put all these dimensions into the dimens file needed for compilation:
+mkdir src
+cd src
+cp $srcdir/* .
+cp -r $hydradir/init .
+cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " ---------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts1="-DN_G=$ng -DN_PER=$n_period -DASPECT={$asp}d0 -DOMEGA={$omega}d0 -DPV_JUMP={$dq}d0"
+if ( ($version == "1") || ($version == "2") ) then
+   # extra CAPS parameters:
+   set copts2="-DDT_MAX={$dt_max}d0 -DT_SAV={$t_save}d0 -DT_SIM={$t_sim}d0 -DC_DAMP={$cdamp}d0 -DR_EKMAN={$rekman}d0 -DESR={$esr}d0 -DKSR=$ksr -DISEED=$iseed"
+else
+   # extra CASL parameters:
+   set copts2="-DN_STEP=$n_steps -DT_STEP={$t_step}d0 -DOMEGA={$omega}d0"
+endif
+set copts=`echo $copts0 $copts1 $copts2`
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+if ($dataopt == "3") then 
+   make $algo setup proxy_post_all install clean
+else
+   make $algo setup $datagen proxy_post_all install clean
+endif
+
+cd ..
+echo " ---------------------------------------------------"
+echo 
+
+#============================================================
+# Execute the data generation script:
+$bindir/$datagen
+
+#==========================================================================
+# Create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Set the job directory name:
+echo
+echo -n ' Job directory name (default n'{$ng}'b'{$asp}')? '
+set basejobdir=$<
+if ($basejobdir == "") set basejobdir=n{$ng}b{$asp}
+
+# work out the last run which has been performed:
+# First make a bogus empty directory so this works!
+mkdir {$basejobdir}r000
+set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+rmdir {$basejobdir}r000
+
+@ next_run = ( $last_run + 1 )
+@ p1 = ( $next_run / 100 )
+@ jr = ( $next_run - ( 100 * $p1 ) )
+@ p2 = ( $jr / 10 )
+@ p3 = ( $jr - ( 10 * $p2 ) )
+set pind={$p1}{$p2}{$p3}
+
+set jobdir={$basejobdir}r{$pind}
+
+#=============================================================
+# Lastly move all data to desired job directory:
+
+# Move temporary directory to job directory:
+mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+# Copy handy script for viewing zonal averages:
+/bin/cp $bindir/zonalview .
+
+echo ' ' >> job_info
+echo ' Job directory:' $datadir >> job_info
+
+echo
+echo ' Launching job ...'
+cd $datadir
+bjob $algo
+echo
+echo ' To view the running job, type'
+echo
+echo 'cd' $datadir
+echo 'tailf monitor.asc'
+echo

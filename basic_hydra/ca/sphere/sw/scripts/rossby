@@ -1,0 +1,276 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the Rossby-Haurowitz test case
+#=========================================================================#
+set datagen = "rossby"
+
+#==========================================================================
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="sphere"
+# Specify model equation type:
+set equa="sw"
+# Set algorithm type:
+set algo="caps"
+
+# The following is totally generic!
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set workdir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $workdir)) mkdir $workdir
+set workdir=$workdir/hydra
+if (!(-d $workdir)) mkdir $workdir
+set basedir=$workdir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$workdir/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+#==========================================================================
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+echo
+echo ' *** Job will be built in the temporary directory '
+echo $tmpdir
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+
+#==========================================================================
+# Set fixed constants:
+set pi=3.14159265358979
+set twopi=`echo "2 * $pi" | bc -l`
+
+# Set basic grid resolution:
+set ng="128"
+echo
+echo ' A longitude-latitude grid of dimensions 2*ng x ng is used.'
+echo -n ' Number of latitudes, ng (default' $ng')? '
+set var=$<
+if ($var != "") set ng=$var
+
+echo ' ' >> job_info
+echo ' Horizontal grid resolution, ng:     ' $ng >> job_info
+
+# Latitudinal grid spacing:
+set gl=`echo "$pi / $ng" | bc -l`
+
+echo
+echo ' We consider a vorticity perturbation of the form A*f_p*z_r where z_r'
+echo ' is a rotated z coordinate with the NP at (lon0,lat0) and f_p is the'
+echo ' polar value of the Coriolis frequency.'
+
+set A="0.025"
+echo
+echo -n ' Amplitude, A (default' $A')? '
+set var=$<
+if ($var != "") set A=$var
+
+set lon0="50"
+echo
+echo -n ' Longitude, lon0 (degrees, default' $lon0')? '
+set var=$<
+if ($var != "") set lon0=$var
+
+set lat0="40"
+echo
+echo -n ' Latgitude, lat0 (degrees, default' $lat0')? '
+set var=$<
+if ($var != "") set lat0=$var
+
+cat << /EOF > in_$datagen
+$ng
+$A
+$lon0
+$lat0
+/EOF
+
+/bin/cp $hydradir/init/$datagen.f90 .
+
+gfortran -O3 -o $datagen $datagen.f90
+
+$datagen < in_$datagen
+
+set dum=`cat basic.dat`
+set cof=$dum[1]
+set omega=`echo "$cof / 2" | bc -l`
+set ld=$dum[2]
+set cgw=`echo "$cof * $ld" | bc -l`
+
+echo ' ' >> job_info
+echo ' Planetary rotation rate, omega:     ' $omega >> job_info
+echo ' Polar deformation length, L_d:      ' $ld >> job_info
+echo ' Short-scale gravity wave speed, c:  ' $cgw >> job_info
+
+/bin/rm $datagen $datagen.f90 basic.dat
+
+#-------------------------------------------------------------------
+# Set the PV jump across contours:
+echo
+set nq="80"
+echo -n ' Number of PV jumps used to represent the planetary vorticity (default' $nq')? '
+set var=$<
+if ($var != "") set nq=$var
+set dq=`echo "scale=12; 4*$omega/$nq" | bc -l`
+
+echo ' ' >> job_info
+echo ' No. of PV jumps to represent f, nq: ' $nq >> job_info
+echo ' PV jump across all contours, dq:    ' $dq >> job_info
+
+#-------------------------------------------------------------------
+# Data save frequency:
+set t_gsave="0.5"
+echo
+echo -n ' Time interval between gridded data saves (default' $t_gsave')? '
+set var=$<
+if ($var != "") set t_gsave=$var
+
+echo ' Time interval between data saves:   ' $t_gsave >> job_info
+
+set t_csave="5.0"
+echo
+echo -n ' Time interval between contour data saves (default' $t_csave')? '
+set var=$<
+if ($var != "") set t_csave=$var
+
+echo ' Time interval between contour saves:' $t_csave >> job_info
+
+set t_sim="15.0"
+echo
+echo -n ' Duration of entire simulation (default' $t_sim')? '
+set var=$<
+if ($var != "") set t_sim=$var
+
+echo ' Duration of entire simulation:      ' $t_sim >> job_info
+
+#-------------------------------------------------------------------
+# Gravity-wave based time step:
+set dt_gw=`echo "scale=14; $gl / $cgw" | bc -l`
+set dt=$dt_gw
+echo ' Marginally gravity wave resolving time step = ' $dt
+# Adjust to be a fraction of the grid save time:
+set fac=`echo "scale=14; $t_gsave/$dt+1.0" | bc -l`
+set dt=`echo "scale=14; $t_gsave/$fac:r" | bc -l`
+echo ' ... adjusted to = ' $dt
+
+echo ' Gravity-wave resolving time step:   ' $dt_gw >> job_info
+echo ' Time step used:                     ' $dt >> job_info
+
+# Use default values for hyperviscosity (applied to divergence only):
+set nnu=3
+set drate="10"
+
+echo ' ' >> job_info
+echo ' ***Lap^'{$nnu} 'Hyperdiffusion used' >> job_info
+echo ' Damping rate on k = ng is C*f;    C:' $drate >> job_info
+
+#=========================================================================
+# Build parameter file with cpp and make all codes:
+
+# Put all these dimensions into the dimens file needed for compilation:
+mkdir src
+cd src
+cp $srcdir/* .
+cp -r $hydradir/init .
+cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " ---------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90:
+set copts1="-DN_G=$ng -DT_STEP={$dt}d0 -DT_GSAVE={$t_gsave}d0 -DT_CSAVE={$t_csave}d0 -DT_SIM={$t_sim}d0"
+set copts2="-DT_RAMP=0.d0 -DN_CONTQ={$nq} -DPOW_HYPER=$nnu -DD_RATE={$drate}d0 -DCOR_FREQ={$cof}d0 -DC_GW={$cgw}d0"
+set copts3="-DR_THINI=0.d0 -DR_THFIN=0.d0 -DA_THERM=0.d0 -DR_EKMAN=0.d0" 
+set copts4="-DESR=0.d0 -DKSR=1 -DISEED=1"
+set copts5="-DA_TOPO=0.d0 -DB_TOPO=0.d0 -DF_TOPO=0.d0"
+set copts=`echo $copts1 $copts2 $copts3 $copts4 $copts5`
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+make caps setup $datagen inigamma proxy_post_all install clean
+
+cd ..
+echo " ---------------------------------------------------"
+echo 
+
+#==========================================================================
+# Create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Set the job directory name:
+echo
+echo -n ' Job directory name (default ng'{$ng}'dr'{$drate}')? '
+set basejobdir=$<
+if ($basejobdir == "") set basejobdir=ng{$ng}dr{$drate}
+
+# work out the last run which has been performed:
+# First make a bogus empty directory so this works!
+mkdir {$basejobdir}r000
+set last_run = `/bin/ls -d {$basejobdir}r??? | tail -c 4 | head -c 3`
+rmdir {$basejobdir}r000
+
+@ next_run = ( $last_run + 1 )
+@ p1 = ( $next_run / 100 )
+@ jr = ( $next_run - ( 100 * $p1 ) )
+@ p2 = ( $jr / 10 )
+@ p3 = ( $jr - ( 10 * $p2 ) )
+set pind={$p1}{$p2}{$p3}
+
+set jobdir={$basejobdir}r{$pind}
+
+#=============================================================
+# Lastly move all data to desired job directory:
+
+# Move temporary directory to job directory:
+mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+# Generate gamma field:
+inigamma
+
+# Copy handy scripts for viewing spectra, zonal averages and contouring:
+/bin/cp $bindir/spec_view .
+/bin/cp $bindir/zonalview .
+/bin/cp $bindir/pcont.py .
+
+echo ' ' >> job_info
+echo ' Job directory:' $datadir >> job_info
+
+echo ' To set the job running, type'
+echo
+echo cd $datadir
+echo bat log caps
+echo

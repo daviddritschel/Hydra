@@ -1,0 +1,52 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for an initial condition consisting of multiple
+#   Bickley jets. 
+#=========================================================================#
+
+set datagen = "staircase"
+
+# Default input parameters:
+set nj  = " 10"   # Number of jets
+set eps = "0.2"   # Max.  ang.  vel. / Planetary ang. vel.
+set a   = "0.01"  # Max. vort. pert. / Planetary ang. vel.
+set p   = "30"    # Central latitude of vorticity perturbation
+#=========================================================================#
+
+echo ' We consider a planet of radius 1 rotating with a period of one "day".'
+echo
+echo ' We start with a superposition of N Bickley jets equally spaced in latitude,' 
+echo ' with maximum angular velocity 2*pi*eps.'
+echo
+echo -n ' Enter N (default' $nj'): ' 
+set var=$<
+if ($var != "") set nj=$var
+echo -n ' Enter eps (default' $eps'): '
+set var=$<
+if ($var != "") set eps=$var
+
+echo
+echo ' We add a vorticity perturbation of the form 2*pi*A*exp(-4*d^2/(4-d^2)),'
+echo ' where d is the chord distance from a point at latitude,longitude (p,0).'
+echo ' *** Note, the global vorticity perturbation mean is removed.'
+echo
+echo -n ' Enter A (default' $a'): ' 
+set var=$<
+if ($var != "") set a=$var
+echo -n ' Enter p (default' $p'): '
+set var=$<
+if ($var != "") set p=$var
+
+echo ' ' >> job_info
+echo ' Number of jets:                     ' $nj >> job_info
+echo ' Max.  ang.  vel./Planetary ang. vel:' $eps >> job_info
+echo ' Max. vort. pert./Planetary ang. vel:' $a >> job_info
+echo ' Central latitude of vort. pert.:    ' $p >> job_info
+
+cat << /EOF > in_$datagen
+$nj $eps
+$a $p
+/EOF
+
+$datagen < in_$datagen > out_$datagen

@@ -1,0 +1,32 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the modon initial condition
+#=========================================================================#
+set datagen = "modon"
+
+# Default parameter:
+set expt=1       # Experiment to run (see modon.f90 for details)
+
+#==========================================================================
+echo ' Choose one of the following experiments:'
+echo ' 1 ( 6x3,  512x256) t= 40 : single balanced vortex'
+echo ' 2 ( 6x3,  512x256) t= 40 : single balanced vortex but without sign changes'
+echo ' 3 ( 6x3,  512x256) t= 40 : vortex with b and zeta fields out of balance'
+echo ' 4 (12x3, 1024x256) t= 60 : colliding balanced vortices, m != 0'
+echo ' 5 (12x3, 1024x256) t= 60 : colliding balanced vortices, m = 0'
+echo ' 6 ( 6x3,  512x256) t= 40 : single "shielded" vortex (h > J1 root)'
+echo ' 7 (12x3, 1024x256) t=120 : chasing balanced vortices, m != 0'
+echo
+echo -n ' Choice (default 1)? '
+set var=$<
+if ($var != "") set expt=$var
+
+echo ' ' >> job_info
+echo ' Experiment in modon.f90:            ' $expt >> job_info
+
+cat << /EOF > in_$datagen
+$expt
+/EOF
+
+$datagen < in_$datagen > out_$datagen

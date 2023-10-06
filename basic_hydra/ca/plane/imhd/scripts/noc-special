@@ -1,0 +1,253 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#  Special job setup script for investigating the early time behaviour
+#  of a vortex patch or a gaussian vortex in an initially uniform 
+#  magnetic field.
+
+#      ***   Here, no contour is added to monitor circulation   ***
+#=========================================================================#
+
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ #
+# ==>   Default parameters   <===
+set nx = "2048"     # Inversion grid resolution in x (and in y)
+set dataopt="2"     # Data generation routine: (1) patch, (2) Gaussian
+set m="0"           # gamma = 32/(5*2^m)
+# ==>   Default parameters   <===
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ #
+
+
+# Specify the data generation routine to be used:
+echo
+echo ' Which type of starting vortex do you wish to consider:'
+echo    '    (1) a circular patch, or '
+echo -n '    (2) a Gaussian vortex  -  (default' $dataopt')? '
+set var=$<
+if ($var != "") set dataopt=$var
+
+echo
+echo -n ' Grid resolution in x (default' $nx')? '
+set var=$<
+if ($var != "") set nx=$var
+set ny = $nx
+
+echo
+echo -n ' We take gamma = 32/(5*2^m); enter m (default' $m')? '
+set var=$<
+if ($var != "") set m=$var
+
+#set gamma="6.4"
+set gamma="12.8"
+if ($m > 0) then
+
+   set k=0
+   while( $k < $m )
+      set gamma=`echo "scale=8; $gamma / 2" | bc -l`
+      @ k ++
+   end
+
+endif
+
+#------------------------------------------------------------------
+# Characteristic vortex radius, R = 5*pi/32:
+set pi=3.14159265358979323846
+set radius=`echo "scale=12; 5 * $pi / 32" | bc -l`
+# With this radius and a diffusion length of dx/2, we have delta = 6.4/ng
+
+# Set magnetic field parameters using defaults assumed for the 
+# characteristic PV, q0, and characteristic horizontal scale, radius:
+set q0=`echo "scale=12; 4 * $pi" | bc -l`
+# With q0 = 4*pi, one unit of time is a vortex rotation period
+set u0=`echo "scale=12; $q0*$radius/2" | bc -l`
+# This is the azimuthal velocity at r = R for both vortices
+
+# Physical parameters:
+set lxdpi = "2"        # Domain width  L_x divided by pi
+set ellx=`echo "$lxdpi * $pi" | bc -l`  # L_x
+set lydpi = "2"        # Domain height L_y divided by pi
+set elly=`echo "$lydpi * $pi" | bc -l`  # L_y
+set kd = "0.0"         # Rossby deformation wavenumber (kd = 1/L_D)
+set beta = "0.0"       # beta/pi where beta is the planetary vorticity gradient
+set rtherm = "0.0"     # Thermal damping/relaxation rate
+set rekman = "0.0"     # Ekman damping rate
+set esr = "0.0"        # Enstrophy injection rate
+set vorvor = "1.0"     # max vorticity/2*pi of the injected vortices
+set ivor = "0"         # Use 1 for vortex monopoles and 2 for vortex dipoles
+
+# Numerical parameters:
+set nq = "80"          # Number of contours used to represent PV
+set tralog = ".false." # Logical variable for monitoring circulation
+set npm = 150000000    # Max number of contour nodes
+
+set glx=`echo "scale=10; $ellx / $nx" | bc -l`  # Grid scale
+
+set tcsave = `echo "sqrt($nx/32)" | bc -l`     # Contour data save time increment
+set tsim=`echo "10.0*$tcsave" | bc -l`         # Total simulation time
+set tgsave = `echo "$tcsave / 20" | bc -l`     # Grid data save time increment
+
+# Specify dlen/dx where dlen is the diffusion length:
+set dlen_nd="1.0"
+# Compute diffusion length:
+set dlen=`echo "scale=10; $dlen_nd*$glx" | bc -l`
+# Compute non-dimensional diffusion length, delta = dlen/radius:
+set delta=`echo "scale=8; $dlen/$radius" | bc -l`
+# Compute magnetic diffusivity, eta:
+set eta=`echo "scale=10; $q0*$dlen*$dlen" | bc -l`
+# Compute magnetic Reynolds number, Rm:
+set rm=`echo "scale=8; $u0*$radius/$eta" | bc -l`
+
+#==========================================================================
+# Specify code numerical method class:
+set meth="ca"
+# Specify code geometry:
+set geom="plane"
+# Specify model equation type:
+set equa="imhd"
+# Specify code version (typically OpenMP or not):
+set algo="caps"
+
+set local_home=`homedir`
+set hydradir=$local_home/$user/hydra/$meth/$geom/$equa
+
+# Get output base directory:
+set workdir=`workdir`
+# Make the base data directory if it does not already exist:
+if (!(-d $workdir)) mkdir $workdir
+set workdir=$workdir/hydra
+if (!(-d $workdir)) mkdir $workdir
+set basedir=$workdir/$meth
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$geom
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$equa
+if (!(-d $basedir)) mkdir $basedir
+set basedir=$basedir/$algo
+if (!(-d $basedir)) mkdir $basedir
+
+set outdir=$workdir/$meth/$geom/$equa/$algo
+
+# Assign source and binary directories:
+set srcdir=$hydradir/$algo
+set bindir=$hydradir/scripts
+
+# Get the name of the computer to record in the job_info file below:
+set host=`hostname | awk -F. '{print $(1)}'`
+
+echo ' ===> Building job for gamma =' $gamma
+
+# Compute mean magnetic field strength, B_0:
+set b0=`echo "scale=10; $gamma*$u0*$delta" | bc -l`
+
+#-------------------------------------------------------------------
+# generate a random number seed based on current time:
+set second=`date +%-S`
+set minute=`date +%-M`
+set hour=`date +%-H`
+set day=`date +%-d`
+@ iseed = ( $second + ( 60 * ( $minute + 60 * ( $hour + ( 24 * $day ) ) ) ) )
+
+# Create a temporary directory:
+set tmpdir=$outdir/tmp{$iseed}
+mkdir $tmpdir
+cd $tmpdir
+
+# Set the job directory name:
+#set jobdir=noc-nx{$nx}m{$m}
+set jobdir=noc-nx{$nx}g{$gamma}
+
+# Create a file containing scales for use in "scale" script:
+echo $q0 $radius $u0 $delta $gamma > in_scale
+
+# Create a job information summary file:
+touch job_info
+echo ' Job created at                      ' `date` >> job_info
+echo ' on                                  ' $host >> job_info
+echo ' ' >> job_info
+echo ' Inversion grid resolution in x & y: ' $nx >> job_info
+echo ' ' >> job_info
+echo ' Characteristic flow speed, U_0:     ' $u0 >> job_info
+echo ' Characteristic length, L:           ' $radius >> job_info
+echo ' Maximum vorticity, q_0:             ' $q0 >> job_info
+echo ' ' >> job_info
+echo ' Mag. diffusion length/dx, dlen/dx:  ' $dlen_nd >> job_info
+echo '                dlen/R, delta:       ' $delta >> job_info
+echo '       (B_0/U_0)/delta, gamma:       ' $gamma >> job_info
+echo ' Magnetic diffusivity, eta:          ' $eta >> job_info
+echo ' Mean magnetic field in x, B_0:      ' $b0 >> job_info
+echo ' Magnetic Reynolds number, U_0*R/eta:' $rm >> job_info
+
+# Create input file for data generation routine:
+if ($dataopt == "1") then 
+set datagen = "ellipse"
+cat << /EOF > in_$datagen
+$radius
+1.0
+/EOF
+else if ($dataopt == "2") then 
+set datagen = "gauss"
+cat << /EOF > in_$datagen
+$radius
+/EOF
+endif
+
+#============================================================
+# Build parameter file with cpp and make all codes:
+mkdir src
+cd src
+cp $srcdir/* .
+cp -r $hydradir/init .
+cp -r $hydradir/post .
+
+echo 
+echo " Compiling source files....."
+echo " -----------------------------------------------------------------------"
+
+# Use C pre-processor to put chosen parameters $copts into parameters.f90
+set copts1="-DN_X=$nx -DN_Y=$ny -DN_CONTQ=$nq -DNPT_MAX=$npm -DT_SIM={$tsim}d0 -DT_GSAVE={$tgsave}d0 -DT_CSAVE={$tcsave}d0"
+set copts2="-DL_X={$ellx}d0 -DL_Y={$elly}d0 -DK_D={$kd}d0 -DPV_GRAD={$beta}d0 -DB_0={$b0}d0 -DMAG_DIFF={$eta}d0"
+set copts3="-DR_THERM={$rtherm}d0 -DR_EKMAN={$rekman}d0"
+set copts4="-DE_SR={$esr}d0 -DVOR_VOR={$vorvor}d0 -DI_VOR={$ivor} -DI_SEED={$iseed} -DT_RACER=$tralog"
+set copts=`echo $copts1 $copts2 $copts3 $copts4`
+precomp $copts parameters.f90
+
+# Compile all codes and move sources to sub-directory:
+make caps setup $datagen proxy_post_all install
+
+cd ..
+echo " -----------------------------------------------------------------------"
+echo 
+
+#============================================================
+# Execute the data generation routine:
+$datagen < in_$datagen > out_$datagen
+
+# Copy useful scripts to job directory:
+/bin/cp $bindir/scale .
+/bin/cp $bindir/spec_view .
+/bin/cp $bindir/zonalview .
+
+# Possibly create a directory named after the data generation script:
+cd ..
+if (!(-d $datagen)) mkdir $datagen
+cd $datagen
+
+# Move temporary directory to job directory:
+/bin/mv $tmpdir $jobdir
+cd $jobdir
+set datadir=`pwd`
+
+echo ' Launching job in the directory'
+echo $datadir
+
+cd $datadir
+
+cat << /EOF > mhdrun
+#!/usr/bin/env csh
+caps
+scale
+/EOF
+chmod +x mhdrun
+
+bjob mhdrun
+

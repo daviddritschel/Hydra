@@ -1,0 +1,50 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for a freely-decaying baroclinic jet
+#=========================================================================#
+set datagen = "vstrip"
+
+# Data generation routine specific parameters:
+set wid  =  "0.4"    # Meridional width of strip in the domain
+set amp1 =  "0.005"   # Amplitude of sin(m_1*kx) mode (k = 2*pi/L_x)
+set amp2 = "-0.004"   # Amplitude of sin(m_2*kx) mode
+set m1 = "7"
+set m2 = "8"
+
+#==========================================================================
+echo ' We start with a strip of PV of width w and having a cross-sectional'
+echo ' distribution q(y) = 4*pi*(1 - 4*y^2/w^2) for |y| < w/2.'
+
+echo -n ' Width of the strip, w (default' $wid')? '
+set var=$<
+if ($var != "") set wid=$var
+
+echo ' The upper edge is displaced by A_1*sin(m_1*kx)+A_2*sin(m_2*kx) where'
+echo ' k = 2*pi/L_x.'
+echo -n ' Amplitude of sin(m_1*kx), A_1 (default' $amp1')? '
+set var=$<
+if ($var != "") set amp1=$var
+echo -n ' Amplitude of sin(m_2*kx), A_2 (default' $amp2')? '
+set var=$<
+if ($var != "") set amp2=$var
+
+echo -n ' Wavenumber m_1 (default' $m1')? '
+set var=$<
+if ($var != "") set m1=$var
+echo -n ' Wavenumber m_2 (default' $m2')? '
+set var=$<
+if ($var != "") set m2=$var
+
+echo '  Parabolic PV strip;  width, w:     ' $wid >> job_info
+echo ' ' >> job_info
+echo '  The upper edge is displaced by' >> job_info
+echo '  dy =' $amp1'*sin('$m1'*kx)+'$amp2'*sin('$m2'*kx)' >> job_info
+
+cat << /EOF > in_$datagen
+$wid
+$amp1 $amp2
+$m1 $m2
+/EOF
+
+$datagen < in_$datagen > out_$datagen

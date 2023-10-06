@@ -1,0 +1,48 @@
+#!/usr/bin/env csh
+
+#============================================================================#
+#               Job setup script for a Gaussian vortex
+#============================================================================#
+set datagen = "gauss"
+
+set pi=3.14159265358979323846
+
+# Data generation routine specific parameters:
+set eps="0.5"                                    # Rossby number
+set rad=`echo "scale=12; 5 * $pi / 32" | bc -l`  # Mean radius of the vortex
+set bx0="0.4"                                    # Mean x magnetic field
+set bz0="0.4"                                    # Mean z magnetic field
+
+#==========================================================================
+
+echo ' We take zeta = eps*f*exp(-0.5*(r/R)^2).'
+echo ' '
+echo -n ' Enter the Rossby number, eps (default' $eps'): '
+set var=$<
+if ($var != "") set eps=$var
+
+echo -n ' Enter the vortex radius,  R  (default' $rad'): '
+set var=$<
+if ($var != "") set rad=$var
+
+echo -n ' Enter the mean x magnetic field, Bx_0 (default' $bx0'): '
+set var=$<
+if ($var != "") set bx0=$var
+
+echo -n ' Enter the mean z magnetic field, Bz_0 (default' $bz0'): '
+set var=$<
+if ($var != "") set bz0=$var
+
+echo '  Gaussian vortex with zeta = eps*f*exp(-0.5*(r/R)^2)' >> job_info
+echo ' ' >> job_info
+echo '  Rossby number, eps:                ' $eps >> job_info
+echo '  Characteristic radius, R:          ' $rad >> job_info
+
+cat << /EOF > in_$datagen
+$eps
+$rad
+$bx0
+$bz0
+/EOF
+
+$datagen < in_$datagen > out_$datagen

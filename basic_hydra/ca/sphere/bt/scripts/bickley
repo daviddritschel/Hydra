@@ -1,0 +1,63 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for the Bickley jet
+#=========================================================================#
+set datagen = "bickley"
+
+# Set fixed constants:
+set pi=3.14159265358979
+set twopi=`echo "scale=10; 2 * $pi" | bc -l`
+
+#==========================================================================
+echo ' We start with a Bickley jet,  u(phi) = u_0 sech^2((phi-phi_0)/b).'
+echo -n ' Normalised maximum speed, u_0/2*pi (default 0.75)? '
+set u0=$<
+if ($u0 == "") set u0="0.75"
+echo -n ' Jet core latitude, phi_0 (default pi/6)? '
+set phi0=$<
+if ($phi0 == "") set phi0=`echo "scale=12; $pi/6" | bc -l`
+echo -n ' Jet half width, b (default pi/12)? '
+set b=$<
+if ($b == "") set b=`echo "scale=12; $pi/12" | bc -l`
+
+echo ' ' >> job_info
+echo ' Bickley (sech^2) jet, u_max/2*pi:   ' $u0 >> job_info
+echo ' Core latitude, phi_0:               ' $phi0 >> job_info
+echo ' Jet half width, b:                  ' $b >> job_info
+
+echo
+echo ' We add a vorticity perturbation of the form'
+echo '    z_0 exp(-(lambda/alpha)^2-((phi-phi_c)/beta)^2).'
+echo -n ' Maximum vorticity/(2*Omega), z_0/f_pole (default 0.1)? '
+set z0=$<
+if ($z0 == "") set z0="0.1"
+echo -n ' Central latitude, phi_c (default pi/6)? '
+set phic=$<
+if ($phic == "") set phic=`echo "scale=12; $pi/6" | bc -l`
+echo -n ' Anomaly half width in longitude, alpha (default pi/6)? '
+set alpha=$<
+if ($alpha == "") set alpha=`echo "scale=12; $pi/6" | bc -l`
+echo -n ' Anomaly half width in  latitude,  beta (default pi/12)? '
+set beta=$<
+if ($beta == "") set beta=`echo "scale=12; $pi/12" | bc -l`
+
+echo ' ' >> job_info
+echo ' Gaussian vorticity pert., amp. z_0: ' $z0 >> job_info
+echo ' Central latitude, phi_c:            ' $phic >> job_info
+echo ' Longitudinal half width, alpha:     ' $alpha >> job_info
+echo ' Latitudinal  half width,  beta:     ' $beta >> job_info
+
+echo
+echo ' A further random vorticity perturbation is added.'
+echo -n ' R.m.s. vorticity perturbation (default 1.0)? '
+set eps=$<
+if ($eps == "") set eps="1.0"
+
+cat << /EOF > in_$datagen
+$u0 $phi0 $b
+$z0 $phic $alpha $beta
+$eps
+/EOF
+
+$datagen < in_$datagen > out_$datagen

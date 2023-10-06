@@ -1,0 +1,7 @@
+#!/usr/bin/env csh
+
+#====================================#
+# Job setup script for a flow at rest
+#====================================#
+
+rest > out_rest
