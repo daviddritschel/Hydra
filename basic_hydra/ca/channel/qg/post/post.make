@@ -12,6 +12,9 @@ present_post_files = $(notdir $(basename $(wildcard $(sourcedir)/post/*.f90)))
 #genfg: $(objects) post/genfg.f90
 #	$(f90) parameters.o constants.o post/genfg.f90 -o genfg $(flags)
 
+pvsep: $(objects) post/pvsep.f90
+	$(f90) parameters.o constants.o post/pvsep.f90 -o pvsep $(flags)
+
 zonal: $(objects) $(fft_lib) post/zonal.f90
 	$(f90) $(fft_lib) $(objects) post/zonal.f90 -o zonal $(flags)
 

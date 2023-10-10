@@ -5,8 +5,19 @@
 #========================================#
 set datagen = "dipole"
 
-echo '  Larichev-Reznik dipile' >> job_info
-echo ' ' >> job_info
-echo '  Radius, R = 1, and propagation speed, c = 0.1' >> job_info
+# Data generation routine specific parameters:
+set c  =  "0.1"    # Propagation speed
 
-$datagen
+echo -n ' Propagation speed, c (default' $c')? '
+set var=$<
+if ($var != "") set c=$var
+
+echo '  Larichev-Reznik dipole' >> job_info
+echo ' ' >> job_info
+echo '  Radius, R = 1, and propagation speed, c = ' $c >> job_info
+
+cat << /EOF > in_$datagen
+$c
+/EOF
+
+$datagen < in_$datagen > out_$datagen

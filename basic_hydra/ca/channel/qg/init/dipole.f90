@@ -5,12 +5,13 @@ use contours
 
 implicit double precision(a-h,o-z)
 
-double precision,parameter:: c=0.1d0 !phase speed
-
 double precision:: qq(0:ny,0:nxm1)
 double precision:: qa(0:nyfp1,0:nxfm1)
 double precision:: ygf(0:nyf),bety(0:ny)
-double precision:: k,ksq
+double precision:: c,k,ksq
+
+write(*,*) ' Propagation speed, c? '
+read(*,*) c
 
 !-----------------------------------------------------------------
  !Initialise constants and arrays for contour advection:
