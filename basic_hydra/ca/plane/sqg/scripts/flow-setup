@@ -76,45 +76,63 @@ echo ' ' >> job_info
 
 #==========================================================================
 # Get the data generation routine to be used:
-set dataopt="1"
+set dataopt="0"
 echo
 echo ' Choose one of the following flow initialisation methods:'
-echo    ' (1) a vortex strip having a parabolic cross-section,'
-echo    ' (2) an elliptical vortex, or'
-echo -n ' (3) a Rossby wave  -  (default' $dataopt')? '
+echo    ' (0) a random buoyancy field,'
+echo    ' (1) a distributed vortex strip, or'
+echo -n ' (2) a distributed elliptical eddy - (default' $dataopt')? '
 set var=$<
 if ($var != "") set dataopt=$var
 echo
 
 # Set defaults for each data generation type:
-if ($dataopt == "1") then 
+if ($dataopt == "0") then
+    # ==> Note that the maximum buoyancy is 1 here <==
+   set datagen = "ranpv"
+
+    # Physical parameters:
+   set lxdpi = "2"     # Domain width  L_x divided by pi
+   set lydpi = "2"     # Domain height L_y divided by pi
+   set dedpi  = "0.5"  # D / pi where D = N*H/f is the scaled depth
+
+    # Numerical parameters:
+   set nx = "1024"     # Inversion grid resolution in x (east - west)
+   set nq="100"        # Number of contours used to represent buoyancy
+   set tgsave="1.25"   # Grid data save time increment
+   set tcsave="12.5"   # Contour data save time increment
+   set tsim="100.0"    # Total simulation time
+
+else if ($dataopt == "1") then
     # ==> Note that the maximum buoyancy is 1 here <==
    set datagen = "vstrip"
 
     # Physical parameters:
    set lxdpi = "2"     # Domain width  L_x divided by pi
    set lydpi = "2"     # Domain height L_y divided by pi
+   set dedpi  = "0.5"  # D / pi where D = N*H/f is the scaled depth
 
     # Numerical parameters:
-   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nx = "1024"     # Inversion grid resolution in x (east - west)
    set nq="100"        # Number of contours used to represent buoyancy
-   set tgsave="0.25"   # Grid data save time increment
-   set tcsave="2.5"    # Contour data save time increment
+   set tgsave="2.0"    # Grid data save time increment
+   set tcsave="20.0"   # Contour data save time increment
    set tsim="100.0"    # Total simulation time
 
 else if ($dataopt == "2") then 
     # ==> Note that the maximum buoyancy is 1 here <==
-   set datagen = "ellipse"
+   set datagen = "eddy"
 
     # Physical parameters:
    set lxdpi = "2"     # Domain width  L_x divided by pi
    set lydpi = "2"     # Domain height L_y divided by pi
+   set dedpi  = "0.5"  # D / pi where D = N*H/f is the scaled depth
 
     # Numerical parameters:
-   set nx = "256"      # Inversion grid resolution in x (east - west)
+   set nx = "512"      # Inversion grid resolution in x (east - west)
    set nq="100"        # Number of contours used to represent buoyancy
-   set tgsave="0.25"   # Grid data save time increment
-   set tcsave="2.5"    # Contour data save time increment
+   set tgsave="2.0"    # Grid data save time increment
+   set tcsave="20.0"   # Contour data save time increment
    set tsim="100.0"    # Total simulation time
 
 else 
@@ -139,6 +157,11 @@ set elly=`echo "$lydpi * $pi" | bc -l`
 set ymin=`echo "-$elly / 2" | bc -l`
 echo ' Width of the domain in x, L_x:      ' $lxdpi"*pi" >> job_info
 echo ' Width of the domain in y, L_y:      ' $lydpi"*pi" >> job_info
+
+echo -n ' Enter D/pi where D = N*H/f is the scaled depth (default' $dedpi')? '
+set var=$<
+if ($var != "") set dedpi=$var
+set depth=`echo "$dedpi * $pi" | bc -l`
 
 #==========================================================================
 # Choose numerical parameters:
@@ -187,6 +210,52 @@ echo ' ***Lap^'{$nnu} 'Hyperdiffusion on buoyancy     ' >> job_info
 echo ' C*|zeta|_rms = damping rate for k = k_max/2   ' >> job_info
 echo ' Damping coefficient, C:             ' $cdamp >> job_info
 
+# Set tracer diffusion:
+echo ''
+echo -n ' Add a diffusive tracer (y/n, default y)? '
+set tracer=$<
+if ($tracer != "n") then
+    set alpha="10.0"
+    echo ' We take the tracer diffusivity kappa = alpha * dx^2 where'
+    echo -n ' dx is the grid length. Enter alpha (default' $alpha'): '
+    set var=$<
+    if ($var != "") set alpha=$var
+    set glx=`echo "$ellx / $nx" | bc -l`
+    set kappa=`echo "$alpha * $glx *$glx" | bc -l`
+
+    set camp="0.0"
+    echo ' The tracer anomaly c(x,y,0) = A*sin(2*pi*x/L_x)*sin(2*pi*y/L_y).'
+    echo -n ' Enter the amplitude A (default' $camp'): '
+    set var=$<
+    if ($var != "") set camp=$var
+
+    if ($camp == "0.0") then
+        set dcdx="1.0"
+    else
+        set dcdx="0.0"
+    endif
+    echo -n ' Mean tracer gradient dc/dx (default' $dcdx'): '
+    set var=$<
+    if ($var != "") set dcdx=$var
+
+    if ($camp == "0.0" && $dcdx == "0.0") then
+        set dcdy="1.0"
+    else
+        set dcdy="0.0"
+    endif
+    echo -n ' Mean tracer gradient dc/dy (default' $dcdy'): '
+    set var=$<
+    if ($var != "") set dcdy=$var
+
+    echo ' Tracer diffusivity, kappa:          ' $kappa >> job_info
+    echo ' Amplitude of anomaly:               ' $camp >> job_info
+    echo ' Mean value of dc/dx:                ' $dcdx >> job_info
+    echo ' Mean value of dc/dy:                ' $dcdy >> job_info
+    echo ' ' >> job_info
+else
+    set kappa="0.0"
+endif
+
 #============================================================
 # Build parameter file with cpp and make all codes:
 
@@ -203,13 +272,17 @@ echo " -----------------------------------------------------------------------"
 
 # Use C pre-processor to put chosen parameters $copts into parameters.f90
 set copts1="-DN_X=$nx -DN_Y=$ny -DN_CONTQ=$nq -DT_SIM={$tsim}d0 -DT_GSAVE={$tgsave}d0 -DT_CSAVE={$tcsave}d0"
-set copts2="-DL_X={$ellx}d0 -DL_Y={$elly}d0 -DC_DAMP={$cdamp}d0 -DPOW_HYPER=$nnu"
+set copts2="-DL_X={$ellx}d0 -DL_Y={$elly}d0 -DL_Z={$depth}d0 -DC_DAMP={$cdamp}d0 -DPOW_HYPER=$nnu -DT_DIFF=$kappa -DDC_DX=$dcdx -DDC_DY=$dcdy"
 set copts=`echo $copts1 $copts2`
 
 precomp $copts parameters.f90
 
 # Compile all codes and move sources to sub-directory:
-make $algo setup $datagen proxy_post_all install clean
+if ($tracer != "n") then
+    make $algo setup $datagen init_tracer proxy_post_all install clean
+else
+    make $algo setup $datagen proxy_post_all install clean
+endif
 
 cd ..
 echo " -----------------------------------------------------------------------"
@@ -219,6 +292,16 @@ echo
 # Execute the data generation script:
 $bindir/$datagen
 
+if ($tracer != "n") then
+#   Optionally include a tracer field:
+    cat << /EOF > in_tracer
+$camp
+/EOF
+
+    init_tracer < in_tracer > out_tracer
+    /bin/rm in_tracer out_tracer
+endif
+
 #==========================================================================
 # Create a directory named after the data generation script:
 cd ..
@@ -226,8 +309,9 @@ if (!(-d $datagen)) mkdir $datagen
 cd $datagen
 
 # Set the job directory name (will be appended by 001, 002 etc...):
-set basejobdir=nx{$nx}
-if ($ny     !=   $nx) set basejobdir={$basejobdir}ny{$ny}
+set basejobdir=nx{$nx}dopi{$dedpi}
+if ($ny     !=   $nx) set basejobdir={$basejobdir}ny{$ny}dopi{$dedpi}
+if ($tracer != "n") set basejobdir={$basejobdir}km{$alpha}a{$camp}cx{$dcdx}cy{$dcdy}
 
 echo
 echo -n ' Job directory name (default '{$basejobdir}')? '
@@ -257,9 +341,15 @@ mv $tmpdir $jobdir
 cd $jobdir
 set datadir=`pwd`
 
-# Copy handy script for viewing spectra:
-/bin/cp $bindir/spec_view .
-/bin/cp $bindir/zonalview .
+# Copy handy scripts for imaging:
+/bin/cp $bindir/dv .
+/bin/cp $bindir/ddv .
+/bin/cp $bindir/sv .
+/bin/cp $bindir/pfields .
+/bin/cp $bindir/pevo .
+/bin/cp $bindir/pnorms .
+/bin/cp $bindir/pbbpp .
+/bin/cp $bindir/pbbzz .
 
 echo ' ' >> job_info
 echo ' Job directory:' >> job_info
@@ -267,5 +357,5 @@ echo $datadir >> job_info
 
 echo ' To set the job running, type'
 echo cd $datadir
-echo bjob $algo
+echo bat log $algo
 echo

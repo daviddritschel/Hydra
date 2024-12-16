@@ -1,0 +1,47 @@
+#!/usr/bin/env csh
+
+#=========================================================================#
+#   Job setup script for an initially random spectrum
+#=========================================================================#
+set datagen = "ranpv"
+
+# Data generation routine specific parameters:
+set ak0  =   "6.0"   # Initial peak wavenumber, k0 above
+set qeddy  = "1.0"   # Max abs b/(f*N)
+set ngen = "55555"   # Random seed
+
+#==========================================================================
+echo ' We assume initial buoyancy variance spectrum of the form'
+echo 
+echo '   Q(k) = c k^{2p-1} exp[-(p-1)*(k/k_0)^2]'
+
+echo
+echo -n ' Peak wavenumber, k0 (default' $ak0')? '
+set var=$<
+if ($var != "") set ak0=$var
+
+echo 
+echo -n ' Max|b|/(f*N) (default' $qeddy')? '
+set var=$<
+if ($var != "") set qeddy=$var
+
+echo -n ' Random seed (default' $ngen')? '
+set var=$<
+if ($var != "") set ngen=$var
+
+echo ' ' >> job_info
+echo ' We start with the buoyancy variance spectrum' >> job_info
+echo ' Q(k) = ck^{2p-1}exp[-(p-1)*(k/k_0)^2]' >> job_info
+echo ' ' >> job_info
+echo ' Above, p = 3 and k_0 =' $ak0 >> job_info
+echo ' ' >> job_info
+echo ' Max|b|/(f*N) =' $qeddy >> job_info
+echo ' Random seed =' $ngen >> job_info
+
+cat << /EOF > in_$datagen
+$ak0
+$qeddy
+$ngen
+/EOF
+
+$datagen < in_$datagen > out_$datagen

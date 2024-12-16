@@ -1,0 +1,251 @@
+#!/usr/bin/env python
+
+# This script plots either b_0/N or zeta at six selected times
+
+#     @@@@   Run from the current job directory   @@@@
+
+#========== Perform the generic imports =========
+import sys,os,warnings
+import numpy as np
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.artist import setp
+import matplotlib.cm as cm
+import matplotlib as mpl
+from matplotlib import rcParams
+from matplotlib import rc
+rcParams.update({'figure.autolayout': True})
+warnings.simplefilter("ignore",DeprecationWarning)
+
+# Ensure latex fonts throughout:
+rc('font', **{'family': 'Times New Roman'})
+rc('text', usetex=True)
+
+# set tick label size:
+label_size = 20
+mpl.rcParams['xtick.labelsize'] = label_size
+mpl.rcParams['ytick.labelsize'] = label_size
+# set x tick width and size:
+mpl.rcParams['xtick.major.size'] = 5
+mpl.rcParams['xtick.major.width'] = 2
+mpl.rcParams['xtick.minor.size'] = 3
+mpl.rcParams['xtick.minor.width'] = 1
+# set y tick width and size:
+mpl.rcParams['ytick.major.size'] = 5
+mpl.rcParams['ytick.major.width'] = 2
+mpl.rcParams['ytick.minor.size'] = 3
+mpl.rcParams['ytick.minor.width'] = 1
+# set axes width:
+mpl.rcParams['axes.linewidth'] = 1
+
+#====================== Function definitions =======================
+def contint(fmin,fmax):
+    #Determines a nice contour interval (giving 10-20 divisions with
+    #interval 1, 2 or 5x10^m for some m) given the minimum & maximum
+    #values of the field data (fmin & fmax).
+
+    fmax = 0.9999999*fmax
+    fmin = 0.9999999*fmin
+    #The 0.99... factor avoids having a superfluous tick interval
+    #in cases where fmax-fmin is 10^m or 2x10^m
+
+    emag = 1.0
+    rmult = fmax-fmin
+    while rmult < 10:
+       emag = emag/10
+       rmult = rmult*10
+
+    while rmult >=  100:
+       emag = emag*10
+       rmult = rmult/10
+
+    kmult = int(rmult/10)
+
+    if kmult < 1:
+       ci = emag
+    elif kmult < 2:
+       ci = 2*emag
+    elif kmult < 4:
+       ci = 4*emag
+    elif kmult < 8:
+       ci = 10*emag
+    else:
+       ci = 20*emag
+
+    return ci
+
+#---------------------------------------------------------------------------
+# Select data to image:
+print()
+print(' The following fields may be imaged:')
+print()
+print(' (1) b_0/N')
+print(' (2) zeta.')
+print()
+option_in=input(' Option (default 1)? ')
+option=int(option_in or 1)
+option=option-1
+
+field_list=['b_0','zeta']
+field_acro=['bb','zz']
+field=field_list[option]
+acron=field_acro[option]
+
+print
+ng_in=input(' Resolution (default 1024)? ')
+ng=int(ng_in or 1024)
+N=ng*ng
+
+# To show more contour lines in main image:
+mult = 2
+
+#---------------------------------------------------------------------------
+# Open and read data file:
+in_file=open(acron+'.r4','r')
+raw_array=np.fromfile(in_file,dtype=np.float32)
+in_file.close()
+# Set up array to contain data:
+w=np.empty([ng+1,ng+1])
+
+# Open ene-ens.asc file to get the available times for plotting:
+in_file=open('ene-ens.asc','r')
+time, ene, ens = np.loadtxt(in_file,dtype=float,unpack=True)
+in_file.close()
+
+if option==0:
+    # Read average buoyancy for plotting purposes:
+    in_file = open('average_qq.asc','r')
+    offset = np.loadtxt(in_file,dtype=float,unpack=True)
+    in_file.close()
+
+    # Fix the min/max values using data at the initial time:
+    w[0:ng,0:ng]=offset+raw_array[1:N+1].reshape(ng,ng).T
+    w[ng,0:ng]=w[0,0:ng]
+    w[0:ng+1,ng]=w[0:ng+1,0]
+
+    wmin = np.amin(w)
+    wmax = np.amax(w)
+    wrange = wmax - wmin
+    wfrac = 0.01
+    wmin = wmin - wfrac*wrange
+    wmax = wmax + wfrac*wrange
+
+    # Obtain contour levels for plotting the colorbars:
+    dw = contint(wmin,wmax)
+    jmin = -int(-wmin/dw)
+    jmax =  int( wmax/dw)
+    clevels1 = np.linspace(dw*(float(jmin)-0.5),dw*(float(jmax)+0.5),jmax-jmin+2)
+
+    dw = dw/mult
+    jmin = -int(-wmin/dw)
+    jmax =  int( wmax/dw)
+    clevels1f = np.linspace(dw*(float(jmin)-0.5),dw*(float(jmax)+0.5),jmax-jmin+2)
+
+else:
+    offset = 0.0
+
+#---------------------------------------------------------------------------
+nf = 6 # allow for 6 frames
+nfmax = len(time)-1 #max frame in the data
+frame_list = np.empty(nf)
+print(' Enter the frames (note: 0 corresponds to t = 0)')
+dframe = int(nfmax/nf)
+frame_def = 0
+for j in range(nf):
+    frame_in = input(' Frame '+str(j+1)+' (default '+str(frame_def)+')? ')
+    frame_list[j] = int(frame_in or frame_def)
+    if j > 0:
+        dframe = int(frame_list[j] - frame_list[j-1])
+        frame_def = int(frame_list[j])
+    frame_def+= dframe
+print()
+
+#---------------------------------------------------------------------------
+# Set up figure:
+fig, ax = plt.subplots(figsize=[14,21], nrows=3, ncols=2)
+ax = ax.flatten()
+
+# Scaled domain dimensions in x and Nz/f (adjust if necessary):
+extent = (-np.pi,np.pi,-np.pi,np.pi)
+
+for step,frame in enumerate(frame_list):
+    frame = int(frame)
+    t = time[frame]
+    print(' Time t =',t)
+    ax1 = ax[step]
+
+    ax1.set_xlim([-np.pi,np.pi])
+    ax1.set_ylim([-np.pi,np.pi])
+
+    # Customise tick values:
+    ax1.xaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+    ax1.set_xticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+    ax1.yaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+    ax1.set_yticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+
+    ax1.set_title('$t = {x:.1f}$'.format(x=t), fontsize=20)
+
+    if step == nf-1 or step == nf-2:
+        ax1.set_xlabel('$x$', fontsize=20)
+    else:
+        plt.setp(ax1.get_xticklabels(), visible=False)
+
+    if step%2 == 0:
+        ax1.set_ylabel('$y$', fontsize=20)
+
+    #------------------------------------------------------
+    # Read data:
+    w[0:ng,0:ng]=offset+raw_array[frame*(N+1)+1:(frame+1)*(N+1)].reshape(ng,ng).T
+
+    # Add periodic edges:
+    w[ng,0:ng]=w[0,0:ng]
+    w[0:ng+1,ng]=w[0:ng+1,0]
+
+    if option == 1:
+        # For vorticity, work out the overall min/max values:
+        wmin = np.amin(w)
+        wmax = np.amax(w)
+        wmag = max(-wmin,wmax)
+        wrms = np.sqrt(np.sum(w[0:ng,0:ng]**2)/float(N))
+        p = 0.75
+        wmax = wmag**p*wrms**(1.0-p)
+        wmin = -wmax
+
+        # Obtain contour levels for plotting the colorbars:
+        dw = contint(wmin,wmax)
+        jmin = -int(-wmin/dw)
+        jmax =  int( wmax/dw)
+        clevels1 = np.linspace(dw*(float(jmin)-0.5),dw*(float(jmax)+0.5),jmax-jmin+2)
+
+        dw = dw/mult
+        jmin = -int(-wmin/dw)
+        jmax =  int( wmax/dw)
+        clevels1f = np.linspace(dw*(float(jmin)-0.5),dw*(float(jmax)+0.5),jmax-jmin+2)
+
+    #---------------------------------------------------------------------
+    # Plot the image in an array with a colourbar:
+    im1 = ax1.imshow(w,cmap=cm.seismic,vmin=wmin,vmax=wmax,extent=extent,
+                   origin='lower',interpolation='bilinear')
+#    cs1 = ax1.contour(w, clevels1f, colors='k', extent=extent, linewidths=1)
+    divider = make_axes_locatable(ax1)
+    cax1 = divider.append_axes("right", size="4%", pad=0.1)
+    cbar = fig.colorbar(im1, cax=cax1, ticks=clevels1, extend='both')
+    cm.seismic.set_under('cyan')
+    cm.seismic.set_over('yellow')
+#    cbar.add_lines(cs1)
+
+fig.subplots_adjust(wspace=0.8, hspace=0.0)
+
+#=========================================================================
+# Save image:
+tmax=t
+tmin=time[int(frame_list[0])]
+
+figfile=field+'_t'+str(tmin)+'-'+str(tmax)+'.pdf'
+fig.savefig(figfile, format='pdf', dpi=600)
+print()
+print(' To view the image, type')
+print()
+print(' ev '+figfile)
+print()

@@ -1,32 +1,34 @@
-program vstrip
-! Initialises a wavy buoyancy strip.
+program eddy
+! Initialises an elliptical eddy.
 
 use constants
 
 implicit double precision(a-h,o-z)
 
+!integer,parameter:: ngridf=nxf*nyf,nbytesf=4*(ngridf+1)
 double precision:: qod0(nyu/2),qod1(nyu/2),qod2(nyu/2)
 double precision:: qev0(0:nyu/2),qev1(0:nyu/2),qev2(0:nyu/2)
 double precision:: qa(nyu,nxu),qq(ny,nx)
 
 write(*,*)
-write(*,*) ' We take b_0/N = (1 - s^2)^p where s = (x - x_c(y))/x_0'
-write(*,*) ' for s < 1, and b_0/N = 0 otherwise.'
-write(*,*) ' Here, x_c = c_1*sin(y) + c_2*sin(2y) for |y| <= pi.'
-write(*,*) ' *** Use p = 0 for the Gaussian profile, b_0/N = e^(-s^2).'
-write(*,*) ' Enter p, x_0, c_1 and c_2:'
-read(*,*) pow,x0,c1,c2
+write(*,*) ' We take b_0/N = (1 - s)^p where s = (x/x_0)^2 + (y/y_0)^2'
+write(*,*) ' for s < 1, and b_0/N = 0 otherwise. *** Use p = 0 to instead'
+write(*,*) ' take b_0/N = e^{-s}.'
+write(*,*)
+write(*,*) ' Enter p, x_0 and y_0:'
+read(*,*) pow,x0,y0
 
 xfac=one/x0
+yfac=one/y0
 
 glxf=ellx/dble(nxu)
 glyf=elly/dble(nyu)
 if (pow > zero) then
    do ix=1,nxu
-      x=xmin+glxf*dble(ix-1)
+      x=xfac*(xmin+glxf*dble(ix-1))
       do iy=1,nyu
-         y=ymin+glyf*dble(iy-1)
-         ssq=((x-c1*sin(y)-c2*sin(two*y))*xfac)**2
+         y=yfac*(ymin+glyf*dble(iy-1))
+         ssq=x**2+y**2
          if (ssq < one) then
             qa(iy,ix)=(one-ssq)**pow
          else
@@ -36,10 +38,10 @@ if (pow > zero) then
    enddo
 else
    do ix=1,nxu
-      x=xmin+glxf*dble(ix-1)
+      x=xfac*(xmin+glxf*dble(ix-1))
       do iy=1,nyu
-         y=ymin+glyf*dble(iy-1)
-         qa(iy,ix)=exp(-((x-c1*sin(y)-c2*sin(two*y))*xfac)**2)
+         y=yfac*(ymin+glyf*dble(iy-1))
+         qa(iy,ix)=exp(-x**2-y**2)
       enddo
    enddo
 endif
@@ -110,4 +112,4 @@ open(11,file='qq_init.r8',form='unformatted', &
 write(11,rec=1) zero,qq
 close(11)
 
-end program vstrip
+end program eddy

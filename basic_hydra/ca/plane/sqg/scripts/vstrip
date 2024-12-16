@@ -1,41 +1,52 @@
 #!/usr/bin/env csh
 
 #=========================================================================#
-#   Job setup script for a buoyancy strip
+#   Job setup script for a buoyancy strip with
+#   b_0/N = (1 - s^2)^p where s = (x-c_1*sin(y)-c_2*sin(2y))/x_0
+#   for s < 1, and b_0/N = 0 otherwise.
+#   *** Use p = 0 for the Gaussian b_0/N = e^{-s^2}.
 #=========================================================================#
 set datagen = "vstrip"
 
 # Data generation routine specific parameters:
-set wid  =  "0.7"      # Meridional width of strip in the domain
-set amp  =  "0.01"     # Amplitude of disturbance (see below)
-set k    =  "2"        # Wavenumber of disturbance (see below)
+set p =  "0.0"      # Power, see comment above
+set x0 = "1.0"      # Half-width of strip
+set c1 = "0.1"      # c_1 above
+set c2 = "0.05"     # c_2 above
 
 #==========================================================================
-echo ' We start with a strip of buoyancy of width w and having a cross-sectional'
-echo ' distribution b(y) = sqrt(1 - 4*y^2/w^2) for |y| < w/2.'
+echo ' We take b_0/N = (1 - s^2)^p where s = (x - x_c(y))/x_0'
+echo ' for s < 1, and b_0/N = 0 otherwise.'
+echo ' Here, x_c = c_1*sin(y) + c_2*sin(2y) for |y| <= pi.'
+echo ' *** Use p = 0 for the Gaussian profile, b_0/N = e^(-s^2).'
 
-echo -n ' Width of the strip, w (default' $wid')? '
+echo -n ' Power, p (default' $p')? '
 set var=$<
-if ($var != "") set wid=$var
+if ($var != "") set x0=$var
 
-echo ' The bouyancy perturbation is 2*A*s*(1-s^2)*sin(k*x) where s = 2*y/w.'
-echo -n ' Enter A (default' $amp')? '
+echo -n ' Half-width of the strip, x_0 (default' $x0')? '
 set var=$<
-if ($var != "") set amp=$var
+if ($var != "") set x0=$var
 
-echo -n ' Enter k (default' $k')? '
+echo -n ' Amplitude c_1 of disturbance(default' $c1')? '
 set var=$<
-if ($var != "") set k=$var
+if ($var != "") set c1=$var
 
-echo '  Bouyancy strip; width, w:          ' $wid >> job_info
+echo -n ' Amplitude c_2 of disturbance(default' $c2')? '
+set var=$<
+if ($var != "") set c2=$var
+
+echo ' b_0/N = (1 - s^2)^p where s = (x-c_1*sin(y)-c_2*sin(2y))/x_0' >> job_info
+echo ' for s < 1, and b_0/N = 0 otherwise.' >> job_info
+echo ' *** If p = 0, instead b_0/N = e^{-s^2}.' >> job_info
 echo ' ' >> job_info
-echo '  Pertubation: 2*A*s*(1-s^2)*sin(k*x) where s = 2*y/w' >> job_info
-echo '     Amplitude, A:                   ' $amp >> job_info
-echo '     Wavenumber, k:                  ' $k >> job_info
+echo '  Power, p:                          ' $p >> job_info
+echo '  Half-width, x_0:                   ' $x0 >> job_info
+echo '  Disturbance amplitude, c_1:        ' $c1 >> job_info
+echo '  Disturbance amplitude, c_2:        ' $c2 >> job_info
 
 cat << /EOF > in_$datagen
-$wid
-$amp $k
+$p $x0 $c1 $c2
 /EOF
 
 $datagen < in_$datagen > out_$datagen

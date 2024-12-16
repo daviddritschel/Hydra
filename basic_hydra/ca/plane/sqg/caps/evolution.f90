@@ -12,8 +12,9 @@ double precision:: uu(ny,nx),vv(ny,nx)
 
  !Spectral fields (note array order):
 double precision:: pp(nx,ny),qq(nx,ny),qc(nx,ny),qd(nx,ny)
-double precision:: qspre(nx,ny)
 double precision:: emq(nx,ny),epq(nx,ny)
+ !Tracer auxiliary arrays (if present):
+double precision,allocatable,dimension(:,:):: emc,epc
 
  !Energy & enstrophy for time interpolation:
 double precision:: enepre,enspre
@@ -87,7 +88,7 @@ call savegrid
 call savecont
 
 return
-end subroutine
+end subroutine advect
 
 !=======================================================================
 
@@ -98,9 +99,8 @@ subroutine init
 
 implicit none
 
- !Local variables:
+ !Local variable:
 double precision:: qa(ny,nx)
-integer:: kx,ky,nc,nptc,i,j
 
 !------------------------------------------------------------------
  !Logical to indicate presence of contours:
@@ -121,18 +121,20 @@ call ptospc(nx,ny,qa,qc,xfactors,yfactors,xtrig,ytrig)
 
  !Define residual buoyancy qd = (1-F)[qs-qc], and copy current gridded 
  !field (qs) for use in time interpolation:
-do ky=1,ny
-  do kx=1,nx
-    qd(kx,ky)=fhi(kx,ky)*(qs(kx,ky)-qc(kx,ky))
-    qs(kx,ky)=filt(kx,ky)*qs(kx,ky) 
-    qspre(kx,ky)=qs(kx,ky) 
-  enddo
-enddo
+qd=fhi*(qs-qc)
+qs=filt*qs 
+qspre=qs
  !Here fhi = 1-F is a high-pass spectral filter and filt is a 
  !de-aliasing filter (defined in spectral.f90)
 
+if (tracer) then
+   !Allocate memory for tracer (anomaly) evolution:
+  allocate(emc(nx,ny),epc(nx,ny))
+  cspre=cs
+endif
+
 return
-end subroutine
+end subroutine init
 
 !=======================================================================
 
@@ -144,9 +146,8 @@ subroutine prepare
 
 implicit none
 
- !Local variables:
+ !Local variable:
 double precision:: qa(ny,nx)
-integer:: kx,ky,i,j
 
 !-----------------------------------------------------------------
  !Convert buoyancy contours to gridded values (qa):
@@ -156,18 +157,19 @@ call con2grid(qa)
 call ptospc(nx,ny,qa,qc,xfactors,yfactors,xtrig,ytrig)
 
  !Put current buoyancy (spectral in qs) and define residual (qd):
-do ky=1,ny
-  do kx=1,nx
-    qs(kx,ky)=flo(kx,ky)*(qs(kx,ky)-qc(kx,ky))+qc(kx,ky)+qd(kx,ky)
-    qd(kx,ky)=qs(kx,ky)-qc(kx,ky)
-  enddo
-enddo
+qs=flo*(qs-qc)+qc+qd
+qd=qs-qc
 
  !Convert qd to physical space as qr (used in recontouring):
 call spctop(nx,ny,qd,qr,xfactors,yfactors,xtrig,ytrig)
 
+if (tracer) then
+   !De-allocate memory for tracer (anomaly) evolution:
+  deallocate(emc,epc)
+endif
+
 return
-end subroutine
+end subroutine prepare
 
 !=======================================================================
 
@@ -186,25 +188,22 @@ implicit none
  !Spectral fields needed in Runge-Kutta time stepping (note array order):
 double precision:: qsi(nx,ny),qsf(nx,ny),sqs(nx,ny)
 double precision:: qdi(nx,ny),qdf(nx,ny),sqd(nx,ny)
+double precision,allocatable,dimension(:,:):: csi,csf,scs
  !Contour positions needed in Runge-Kutta time stepping:
 double precision:: xqi(nptq),yqi(nptq),xqf(nptq),yqf(nptq)
  !Contour velocities:
 double precision:: uq(nptq),vq(nptq)
  !Other local quantities:
 double precision:: xx,yy
-integer:: kx,ky,i
+integer:: i
 
 !-------------------------------------------------------------------
  !Re-initialise qs & qd at the beginning of the time step:
  !          Reset qs = F*(qs-qc) + qc + qd
  !            and qd = (1-F)*(qs-qc)
  !after qs is reset; here F is a low pass filter (see spectral.f90)
-do ky=1,ny
-  do kx=1,nx
-    qs(kx,ky)=flo(kx,ky)*qs(kx,ky)+fhi(kx,ky)*qc(kx,ky)+qd(kx,ky)
-    qd(kx,ky)=fhi(kx,ky)*(qs(kx,ky)-qc(kx,ky))
-  enddo
-enddo
+qs=flo*qs+fhi*qc+qd
+qd=fhi*(qs-qc)
 
 !------------------------------------------------------------------
  !RK4 predictor step to time t0 + dt/2:
@@ -238,16 +237,23 @@ if (contex) then
   enddo
 endif
 
-do ky=1,ny
-  do kx=1,nx
-    qsi(kx,ky)=qs(kx,ky)
-    qs(kx,ky)=qsi(kx,ky)+dt2*sqs(kx,ky)
-    qsf(kx,ky)=qsi(kx,ky)+dt6*sqs(kx,ky)
-    qdi(kx,ky)=qd(kx,ky)
-    qd(kx,ky)=emq(kx,ky)*(qdi(kx,ky)+dt2*sqd(kx,ky))
-    qdf(kx,ky)=qdi(kx,ky)+dt6*sqd(kx,ky)
-  enddo
-enddo
+qsi=qs
+qs=qsi+dt2*sqs
+qsf=qsi+dt6*sqs
+qdi=qd
+qd=emq*(qdi+dt2*sqd)
+qdf=qdi+dt6*sqd
+
+if (tracer) then
+   !Allocate memory for tracer (anomaly) evolution:
+  allocate(csi(nx,ny),csf(nx,ny),scs(nx,ny))
+   !Compute tracer source:
+  call tracer_source(scs,0)
+   !Evolve tracer:
+  csi=cs
+  cs=emc*(csi+dt2*scs)
+  csf=csi+dt6*scs
+endif
 
 !------------------------------------------------------------------
  !RK4 corrector step at time t0 + dt/2:
@@ -273,14 +279,18 @@ if (contex) then
   enddo
 endif
 
-do ky=1,ny
-  do kx=1,nx
-    qs(kx,ky)=qsi(kx,ky)+dt2*sqs(kx,ky)
-    qsf(kx,ky)=qsf(kx,ky)+dt3*sqs(kx,ky)
-    qd(kx,ky)=emq(kx,ky)*(qdi(kx,ky)+dt2*sqd(kx,ky))
-    qdf(kx,ky)=qdf(kx,ky)+dt3*sqd(kx,ky)
-  enddo
-enddo
+qs=qsi+dt2*sqs
+qsf=qsf+dt3*sqs
+qd=emq*(qdi+dt2*sqd)
+qdf=qdf+dt3*sqd
+
+if (tracer) then
+   !Compute tracer source:
+  call tracer_source(scs,1)
+   !Evolve tracer:
+  cs=emc*(csi+dt2*scs)
+  csf=csf+dt3*scs
+endif
 
 !------------------------------------------------------------------
  !RK4 predictor step at time t0 + dt:
@@ -305,15 +315,19 @@ if (contex) then
   enddo
 endif
 
-do ky=1,ny
-  do kx=1,nx
-    qs(kx,ky)=qsi(kx,ky)+dt*sqs(kx,ky)
-    qsf(kx,ky)=qsf(kx,ky)+dt3*sqs(kx,ky)
-    emq(kx,ky)=emq(kx,ky)**2
-    qd(kx,ky)=emq(kx,ky)*(qdi(kx,ky)+dt*sqd(kx,ky))
-    qdf(kx,ky)=qdf(kx,ky)+dt3*sqd(kx,ky)
-  enddo
-enddo
+qs=qsi+dt*sqs
+qsf=qsf+dt3*sqs
+emq=emq**2
+qd=emq*(qdi+dt*sqd)
+qdf=qdf+dt3*sqd
+
+if (tracer) then
+   !Compute tracer source:
+  call tracer_source(scs,1)
+   !Evolve tracer:
+  cs=emc*(csi+dt*scs)
+  csf=csf+dt3*scs
+endif
 
 !------------------------------------------------------------------
  !RK4 corrector step at time t0 + dt:
@@ -335,15 +349,20 @@ if (contex) then
   enddo
 endif
 
-do ky=1,ny
-  do kx=1,nx
-    qs(kx,ky)=qsf(kx,ky)+dt6*sqs(kx,ky)
-    qd(kx,ky)=emq(kx,ky)*(qdf(kx,ky)+dt6*sqd(kx,ky))
-  enddo
-enddo
+qs=qsf+dt6*sqs
+qd=emq*(qdf+dt6*sqd)
+
+if (tracer) then
+   !Compute tracer source:
+  call tracer_source(scs,2)
+   !Evolve tracer:
+  cs=emc*(csf+dt6*scs)
+   !De-allocate memory:
+  deallocate(csi,csf,scs)
+endif
 
 return
-end subroutine
+end subroutine advance
 
 !=======================================================================
 
@@ -361,58 +380,75 @@ integer:: lev
  !Local variables:
 double precision:: qqx(ny,nx),qqy(ny,nx)
 double precision:: wkp(ny,nx)
-integer:: ix,iy,kx,ky
 
 !---------------------------------------------------------------
  !qd source:
 call gradient(qd,qqx,qqy)
-do ix=1,nx
-  do iy=1,ny
-    wkp(iy,ix)=-uu(iy,ix)*qqx(iy,ix)-vv(iy,ix)*qqy(iy,ix)
-  enddo
-enddo
+wkp=-uu*qqx-vv*qqy
  !Convert to spectral space:
 call ptospc(nx,ny,wkp,sqd,xfactors,yfactors,xtrig,ytrig)
 
 !---------------------------------------------------------------
  !qs source - only NL term is needed:
 call gradient(qs,qqx,qqy)
-do ix=1,nx
-  do iy=1,ny
-    wkp(iy,ix)=-uu(iy,ix)*qqx(iy,ix)-vv(iy,ix)*qqy(iy,ix)
-  enddo
-enddo
+wkp=-uu*qqx-vv*qqy
  !Convert to spectral space:
 call ptospc(nx,ny,wkp,sqs,xfactors,yfactors,xtrig,ytrig)
 
 !----------------------------------------------------------------
 if (lev .eq. 0) then
  !Spectrally truncate sources:
-  do ky=1,ny
-    do kx=1,nx
-      sqs(kx,ky)=filt(kx,ky)*sqs(kx,ky)
-      sqd(kx,ky)=filt(kx,ky)*sqd(kx,ky)
-    enddo
-  enddo
+  sqs=filt*sqs
+  sqd=filt*sqd
  !Apply exponential integrating factors (and spectrally truncate sources):
 else if (lev .eq. 1) then
-  do ky=1,ny
-    do kx=1,nx
-      sqs(kx,ky)=filt(kx,ky)*sqs(kx,ky)
-      sqd(kx,ky)= epq(kx,ky)*sqd(kx,ky)
-    enddo
-  enddo
+  sqs=filt*sqs
+  sqd= epq*sqd
 else
-  do ky=1,ny
-    do kx=1,nx
-      sqs(kx,ky)=filt(kx,ky)*sqs(kx,ky)
-      sqd(kx,ky)= epq(kx,ky)**2*sqd(kx,ky)
-    enddo
-  enddo
+  sqs=filt*sqs
+  sqd= epq**2*sqd
 endif
 
 return
-end subroutine
+end subroutine source
+
+!=======================================================================
+
+subroutine tracer_source(scs,lev)
+
+! Gets the source term (scs) for the tracer (anomaly) field (cs)
+! evolution equation (all in spectral space):
+
+implicit none
+
+ !Passed variables:
+double precision:: scs(nx,ny)
+integer:: lev
+
+ !Local variables:
+double precision:: cx(ny,nx),cy(ny,nx)
+double precision:: wkp(ny,nx)
+
+!---------------------------------------------------------------
+ !cs source:
+call gradient(cs,cx,cy)
+wkp=-uu*(dcdx+cx)-vv*(dcdy+cy)
+ !Convert to spectral space:
+call ptospc(nx,ny,wkp,scs,xfactors,yfactors,xtrig,ytrig)
+
+!----------------------------------------------------------------
+if (lev .eq. 0) then
+ !Spectrally truncate source:
+  scs=filt*scs
+ !Apply exponential integrating factors (and spectrally truncate sources):
+else if (lev .eq. 1) then
+  scs=epc*scs
+else
+  scs=epc**2*scs
+endif
+
+return
+end subroutine tracer_source
 
 !=======================================================================
 
@@ -424,9 +460,8 @@ subroutine inversion
 
 implicit none
 
- !Local variables:
+ !Local variable:
 double precision:: qa(ny,nx)
-integer:: kx,ky
 
 !------------------------------------------------------------
  !Call con2grid to get updated contour buoyancy (qc):
@@ -436,17 +471,13 @@ call ptospc(nx,ny,qa,qc,xfactors,yfactors,xtrig,ytrig)
 
  !Combine fields to update qq with full field,
  !qq = F[qs-qc]+qc+qd, where F is a low pass filter:
-do ky=1,ny
-  do kx=1,nx
-    qq(kx,ky)=flo(kx,ky)*qs(kx,ky)+fhi(kx,ky)*qc(kx,ky)+qd(kx,ky)
-  enddo
-enddo
+qq=flo*qs+fhi*qc+qd
 
  !Invert buoyancy to obtain velocity field: 
 call main_invert(qq,uu,vv,pp)
 
 return
-end subroutine
+end subroutine inversion
 
 !=======================================================================
 
@@ -464,32 +495,19 @@ double precision,parameter:: dtfac=pi/10.d0, cflmax=0.7d0
 double precision:: zz(ny,nx) !Physical
 double precision:: ss(nx,ny) !Spectral
 double precision:: umax,zzrms,zzmax,dtacc,tcont,cfl,dfac,eif
-integer:: kx,ky,ix,iy,itime
+integer:: itime
 
 !----------------------------------------------------------------------
  !Compute the gridded relative vorticity (zz):
-do ky=1,ny
-  do kx=1,nx
-    ss(kx,ky)=qq(kx,ky)*vorop(kx,ky)
-  enddo
-enddo
+ss=qq*vorop
  !vorop = |k|, and is defined in spectral.f90
  !Above, qq = buoyancy in spectral space.
 call spctop(nx,ny,ss,zz,xfactors,yfactors,xtrig,ytrig)
 
  !Compute accurate advection time step:
-umax=small
-zzrms=zero
-zzmax=small
-do ix=1,nx
-  do iy=1,ny
-    umax=max(umax,uu(iy,ix)**2+vv(iy,ix)**2)
-    zzrms=zzrms+zz(iy,ix)**2
-    zzmax=max(zzmax,abs(zz(iy,ix)))
-  enddo
-enddo
-umax=sqrt(umax)
-zzrms=sqrt(zzrms*dsumi)
+umax=sqrt(maxval(uu**2+vv**2))
+zzmax=maxval(abs(zz))
+zzrms=sqrt(dsumi*sum(zz**2))
 dtacc=min(glx*cflmax/umax,dtfac/zzmax)
 
 !---------------------------------------------------------------------
@@ -525,11 +543,10 @@ if (t .lt. tgrid .and. t+dt .ge. tgrid) then
   gsave=.true.
 
    !Copy current gridded fields for use in time interpolation:
-  do ky=1,ny
-    do kx=1,nx
-      qspre(kx,ky)=qs(kx,ky) 
-    enddo
-  enddo
+  qspre=qs
+
+   !Do same for the tracer (anomaly), if present:
+  if (tracer) cspre=cs
 
    !Compute energy & enstrophy:
   call energy(enepre,enspre)
@@ -547,16 +564,19 @@ endif
 !---------------------------------------------------------------------
  !Define spectral integrating factors used in Runge-Kutta integration:
 dfac=dt2*zzrms
-do ky=1,ny
-  do kx=1,nx
-    eif=exp(dfac*qdiss(kx,ky))
-    epq(kx,ky)=eif*filt(kx,ky)
-    emq(kx,ky)=one/eif
-  enddo
-enddo
+ss=exp(dfac*qdiss)
+epq=ss*filt
+emq=one/ss
+
+ !Possibly include factors for a tracer as well:
+if (tracer) then
+  ss=exp(dt2*tdiss)
+  epc=ss*filt
+  emc=one/ss
+endif
 
 return
-end subroutine
+end subroutine adapt
 
 !=======================================================================
 
@@ -570,23 +590,19 @@ implicit none
 double precision:: ene,ens
 
  !Local variables:
-integer:: ix,iy
+double precision:: wka(ny,nx) !Physical
+double precision:: qqs(nx,ny) !Spectral
 
 !----------------------------------------------------------------------
- !Compute kinetic energy:
-ene=zero
-ens=zero
-do ix=1,nx
-  do iy=1,ny
-    ene=ene+uu(iy,ix)**2+vv(iy,ix)**2
-    ens=ens+qq(iy,ix)**2
-  enddo
-enddo
-ene=f12*garea*ene
-ens=f12*garea*ens
+ !Compute energy & enstrophy:
+ene=f12*garea*sum(uu**2+vv**2)
+
+qqs=qq
+call spctop(nx,ny,qqs,wka,xfactors,yfactors,xtrig,ytrig)
+ens=f12*garea*sum(wka**2)
 
 return
-end subroutine
+end subroutine energy
 
 !=======================================================================
 
@@ -598,12 +614,11 @@ implicit none
 
  !Local variables:
 double precision:: wka(ny,nx),wkb(ny,nx) !Physical
-double precision:: qqs(nx,ny) !Spectral
-double precision:: qspec(0:max(nx,ny))
-double precision:: qql2,pt,ptc,ene,ens
-double precision:: enepost,enspost,sumqspec
-real:: qqr4(ny,nx),tr4
-integer:: ix,iy,kx,ky,k
+double precision:: qqs(nx,ny),zzs(nx,ny) !Spectral
+double precision:: spec(0:max(nx,ny))
+double precision:: pt,ptc,ene,ens
+double precision:: enepost,enspost
+integer:: k
 
 !---------------------------------------------------------------
  !Increment counter for direct file access:
@@ -614,11 +629,10 @@ pt=(t-tgrid)/dt
 ptc=one-pt
 
  !Interpolate buoyancy at save time:
-do ky=1,ny
-  do kx=1,nx
-    qqs(kx,ky)=pt*qspre(kx,ky)+ptc*qq(kx,ky)
-  enddo
-enddo
+qqs=pt*qspre+ptc*qq
+
+ !Compute vertical vorticity:
+zzs=vorop*qqs
 
 !---------------------------------------------------------------
  !Compute energy:
@@ -632,41 +646,52 @@ ens=pt*enspre+ptc*enspost
 write(15,'(f7.2,2(1x,f16.9))') tgrid,ene,ens
 
 !---------------------------------------------------------------
- !Compute 1d buoyancy spectrum:
-call spec1d(qqs,qspec,0)
-sumqspec=zero
-do k=1,kmax
-  sumqspec=sumqspec+qspec(k)
-   !Normalise to take into account uneven sampling of wavenumbers 
-   !in each shell [k-1/2,k+1/2]:
-  qspec(k)=spmf(k)*qspec(k)
+ !Compute 1d spectra for various fields:
+call spec1d(qqs,spec)
+spec=log10(spmf*spec+1.d-32)
+write(51,'(f12.5,1x,i5)') tgrid,kmaxred
+do k=1,kmaxred
+  write(51,'(2(1x,f12.8))') alk(k),spec(k)
 enddo
-sumqspec=8.d0*sumqspec*dsumi
+
+call spec1d(zzs,spec)
+spec=log10(spmf*spec+1.d-32)
+write(52,'(f12.5,1x,i5)') tgrid,kmaxred
+do k=1,kmaxred
+  write(52,'(2(1x,f12.8))') alk(k),spec(k)
+enddo
 
 !---------------------------------------------------------------
-!Write buoyancy to qq.r4:
+ !Write scaled buoyancy (b_0/N) to bb.r4:
 call spctop(nx,ny,qqs,wka,xfactors,yfactors,xtrig,ytrig)
+write(31,rec=igrids) real(tgrid),real(wka)
 
-tr4=real(tgrid)
-qqr4=real(wka)
-write(31,rec=igrids) tr4,qqr4
+ !Write vertical vorticity to zz.r4:
+call spctop(nx,ny,zzs,wka,xfactors,yfactors,xtrig,ytrig)
+write(32,rec=igrids) real(tgrid),real(wka)
+
+if (tracer) then
+   !Write tracer (anomaly) spectrum cspec.asc:
+  qqs=pt*cspre+ptc*cs
+  call spec1d(qqs,spec)
+  spec=log10(spmf*spec+1.d-32)
+  write(53,'(f12.5,1x,i5)') tgrid,kmaxred
+  do k=1,kmaxred
+    write(53,'(2(1x,f12.8))') alk(k),spec(k)
+  enddo
+
+   !Write tracer (anomaly) field to cc.r4:
+  call spctop(nx,ny,qqs,wka,xfactors,yfactors,xtrig,ytrig)
+  write(33,rec=igrids) real(tgrid),real(wka)
+endif
 
 write(*,'(a,f7.2,2(a,f13.6))') ' t = ',tgrid,' enstrophy = ',ens,' energy = ',ene
-
- !Write out spectrum to file:
-write(51,'(f7.2,2(1x,f16.9),1x,i5)') tgrid,sumqspec,qql2,kmaxred
- !kmaxred = kmax/sqrt(2) to avoid shells in the upper corner of the
- !          kx,ky plane which are not fully populated
-do k=1,kmaxred
-  write(51,'(2(1x,f12.8))') alk(k),log10(qspec(k))
-enddo
- !Note: alk(k) = log_10(k)
 
  !Unset flag for saving data:
 gsave=.false.
 
 return
-end subroutine
+end subroutine savegrid
 
 !=======================================================================
       
@@ -679,8 +704,7 @@ implicit none
  !Local variables:
 double precision:: ss(nx,ny)
 double precision:: qa(ny,nx)
-real:: qdr4(ny,nx),tr4
-integer:: irec,kx,ky,ix,iy
+integer:: irec
 character(len=3):: pind
 
 !---------------------------------------------------------------
@@ -688,19 +712,13 @@ write(*,'(a,f12.5)') ' Saving contours at t = ',t
 irec=nint(t/tcsave)
 write(pind(1:3),'(i3.3)') irec
 
-tr4=real(t)
  !Write contours to the cont subdirectory:
 write(80,'(i8,1x,i9,1x,f12.5,1x,f16.12)') nq,nptq,t,qjump
 
  !Save residual needed to build ultra-fine-grid buoyancy for plotting purposes:
-do ky=1,ny
-  do kx=1,nx
-    ss(kx,ky)=qq(kx,ky)-qc(kx,ky)
-  enddo
-enddo
+ss=qq-qc
 call spctop(nx,ny,ss,qa,xfactors,yfactors,xtrig,ytrig)
-qdr4=real(qa)
-write(83,rec=irec) tr4,qdr4
+write(83,rec=irec) real(t),real(qa)
 
  !Save buoyancy contours if any exist:
 if (contex) then
@@ -717,9 +735,9 @@ endif
 csave=.false.
 
 return
-end subroutine
+end subroutine savecont
 
 !=======================================================================
 
  !Main end module
-end module
+end module evolution

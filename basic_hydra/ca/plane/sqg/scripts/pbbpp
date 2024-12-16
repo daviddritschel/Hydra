@@ -1,0 +1,300 @@
+#!/usr/bin/env python
+
+# This script plots the scaled buoyancy and pressure both in
+# an xy and an xz cross section from data in bb.r4, pp.r4,
+# bbxz.r4 & bbyz.r4 (the latter two must be created by running
+# crossxz first).
+
+#     @@@@   Run from the current job directory   @@@@
+
+#========== Perform the generic imports =========
+import sys,os,warnings
+import numpy as np
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+from matplotlib.artist import setp
+import matplotlib.cm as cm
+import matplotlib as mpl
+from matplotlib import rcParams
+from matplotlib import rc
+rcParams.update({'figure.autolayout': True})
+warnings.simplefilter("ignore",DeprecationWarning)
+from mpl_toolkits.axes_grid1 import ImageGrid
+
+# Ensure latex fonts throughout:
+rc('font', **{'family': 'Times New Roman'})
+rc('text', usetex=True)
+
+# set tick label size:
+label_size = 20
+mpl.rcParams['xtick.labelsize'] = label_size
+mpl.rcParams['ytick.labelsize'] = label_size
+# set x tick width and size:
+mpl.rcParams['xtick.major.size'] = 5
+mpl.rcParams['xtick.major.width'] = 2
+mpl.rcParams['xtick.minor.size'] = 3
+mpl.rcParams['xtick.minor.width'] = 1
+# set y tick width and size:
+mpl.rcParams['ytick.major.size'] = 5
+mpl.rcParams['ytick.major.width'] = 2
+mpl.rcParams['ytick.minor.size'] = 3
+mpl.rcParams['ytick.minor.width'] = 1
+# set axes width:
+mpl.rcParams['axes.linewidth'] = 1
+
+#====================== Function definitions =======================
+def contint(fmin,fmax):
+    #Determines a nice contour interval (giving 10-20 divisions with
+    #interval 1, 2 or 5x10^m for some m) given the minimum & maximum
+    #values of the field data (fmin & fmax).
+
+    fmax=0.9999999*fmax
+    fmin=0.9999999*fmin
+    #The 0.99... factor avoids having a superfluous tick interval
+    #in cases where fmax-fmin is 10^m or 2x10^m
+
+    emag=1.0
+    rmult=fmax-fmin
+    while rmult < 10:
+       emag=emag/10
+       rmult=rmult*10
+
+    while rmult >= 100:
+       emag=emag*10
+       rmult=rmult/10
+
+    kmult=int(rmult/10)
+
+    if kmult < 1:
+       ci=emag
+    elif kmult < 2:
+       ci=2*emag
+    elif kmult < 4:
+       ci=4*emag
+    elif kmult < 8:
+       ci=10*emag
+    else:
+       ci=20*emag
+
+    return ci
+
+#======================================================================
+# Open ene-ens.asc file to get the available times for plotting:
+in_file=open('ene-ens.asc','r')
+time, ene, ens = np.loadtxt(in_file,dtype=float,unpack=True)
+in_file.close()
+
+# Select time to image:
+print()
+t_def=60
+t_in=input(' Time to image (default '+str(t_def)+')? ')
+t=float(t_in or t_def)
+
+# Find frame in data:
+frame=0
+while abs(time[frame]-t) > 0.001:
+    frame+=1
+
+print
+ng_in=input(' Resolution (default 2048)? ')
+ng=int(ng_in or 2048)
+N=ng*ng
+
+print(' The domain width is assumed to be 2*pi.')
+sdep_in=input(' Scaled domain depth / width (default 0.25)? ')
+sdep=float(sdep_in or 0.25)
+depth=sdep*2.0*np.pi
+
+eps_in=input(' f/N used in crossxz (default 0.125)? ')
+eps=float(eps_in or 0.125)
+nz=int(eps*float(ng)*sdep+0.5)+1
+print(' Using',nz-1,'vertical intervals.')
+M=ng*nz
+
+# To show more contour lines in main image:
+mult = 2
+
+#---------------------------------------------------------------------------
+# Open and read buoyancy data file:
+in_file=open('bb.r4','r')
+raw_array=np.fromfile(in_file,dtype=np.float32)
+in_file.close()
+# Set up array to contain data:
+bb=np.empty([ng+1,ng+1])
+
+# Read average buoyancy for plotting purposes:
+in_file = open('average_qq.asc','r')
+boff = np.loadtxt(in_file,dtype=float,unpack=True)
+in_file.close()
+
+# Get data at selected time:
+bb[0:ng,0:ng]=boff+raw_array[frame*(N+1)+1:(frame+1)*(N+1)].reshape(ng,ng)
+
+in_file=open('bbxz.r4','r')
+raw_array=np.fromfile(in_file,dtype=np.float32)
+in_file.close()
+# Set up array to contain data:
+cbb=np.empty([ng+1,nz])
+
+# Get data at selected time:
+cbb[0:ng,:]=raw_array[frame*(M+1)+1:(frame+1)*(M+1)].reshape(ng,nz)
+
+#---------------------------------------------------------------------------
+# Open and read pressure data file:
+in_file=open('pp.r4','r')
+raw_array=np.fromfile(in_file,dtype=np.float32)
+in_file.close()
+# Set up array to contain data:
+pp=np.empty([ng+1,ng+1])
+
+# Get data at selected time:
+pp[0:ng,0:ng]=raw_array[frame*(N+1)+1:(frame+1)*(N+1)].reshape(ng,ng)
+
+in_file=open('ppxz.r4','r')
+raw_array=np.fromfile(in_file,dtype=np.float32)
+in_file.close()
+# Set up array to contain data:
+cpp=np.empty([ng+1,nz])
+
+# Get data at selected time:
+cpp[0:ng,:]=raw_array[frame*(M+1)+1:(frame+1)*(M+1)].reshape(ng,nz)
+
+#-----------------------------------------------------
+# Add periodic edges:
+bb[ng,0:ng]=bb[0,0:ng]
+bb[0:ng+1,ng]=bb[0:ng+1,0]
+cbb[ng,:]=cbb[0,:]
+pp[ng,0:ng]=pp[0,0:ng]
+pp[0:ng+1,ng]=pp[0:ng+1,0]
+cpp[ng,:]=cpp[0,:]
+
+print()
+
+#-----------------------------------------------------
+# Work out buoyancy contour values:
+if frame > 0:
+    bbmin = -0.01
+    bbmax = 1.01
+else:
+    bbmin = 0.0
+    bbmax = 1.0
+
+dbb=contint(bbmin,bbmax)
+jmin=-int(-bbmin/dbb)
+jmax= int( bbmax/dbb)
+clevels1=np.linspace(dbb*float(jmin),dbb*float(jmax),jmax-jmin+1)
+dbb=dbb/mult
+jmin=-int(-bbmin/dbb)
+jmax= int( bbmax/dbb)
+clevels1f=np.linspace(dbb*float(jmin),dbb*float(jmax),jmax-jmin+1)
+
+#-----------------------------------------------------
+# Work out pressure contour values:
+ppmin=np.amin(pp)
+ppmax=np.amax(pp)
+ppmag=max(-ppmin,ppmax)
+ppmin=-ppmag
+ppmax=ppmag
+
+dpp=contint(ppmin,ppmax)
+jmin=-int(-ppmin/dpp)
+jmax= int( ppmax/dpp)
+clevels2=np.linspace(dpp*float(jmin),dpp*float(jmax),jmax-jmin+1)
+dpp=dpp/mult
+jmin=-int(-ppmin/dpp)
+jmax= int( ppmax/dpp)
+clevels2f=np.linspace(dpp*float(jmin),dpp*float(jmax),jmax-jmin+1)
+
+#==============================================================================
+# Set up figure:
+fig = plt.figure(figsize=(14, 9), dpi=200)
+grid = ImageGrid(fig, 111,
+                 nrows_ncols=(2, 2),
+                 aspect=True,
+                 axes_pad=(0.7, 0.4),
+                 direction='row',
+                 share_all=False,
+                 cbar_location="right",
+                 cbar_mode='each',
+                 cbar_size="4%",
+                 cbar_pad=0.05)
+
+ax1 = grid[0]
+ax2 = grid[1]
+ax3 = grid[2]
+ax4 = grid[3]
+
+ax1.set_xlim([-np.pi,np.pi])
+ax1.set_ylim([-np.pi,np.pi])
+ax2.set_xlim([-np.pi,np.pi])
+ax2.set_ylim([-np.pi,np.pi])
+ax3.set_xlim([-np.pi,np.pi])
+ax3.set_ylim([-np.pi/2,0.0])
+ax4.set_xlim([-np.pi,np.pi])
+ax4.set_ylim([-np.pi/2,0.0])
+
+# Customise tick values:
+ax1.xaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+ax2.xaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+ax3.xaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+ax4.xaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+ax1.set_xticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+ax2.set_xticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+ax3.set_xticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+ax4.set_xticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+
+ax1.yaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+ax2.yaxis.set_ticks([-np.pi,-np.pi/2.0,0.0,np.pi/2.0,np.pi])
+ax3.yaxis.set_ticks([-np.pi/2.0,-np.pi/4.0,0.0])
+ax4.yaxis.set_ticks([-np.pi/2.0,-np.pi/4.0,0.0])
+ax1.set_yticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+ax2.set_yticklabels([r'$-\pi$',r'$-\pi/2$',r'$0$',r'$\pi/2$',r'$\pi$'],fontsize=20)
+ax3.set_yticklabels([r'$-\pi/2$',r'$-\pi/4$',r'$0$'],fontsize=20)
+ax4.set_yticklabels([r'$-\pi/2$',r'$-\pi/4$',r'$0$'],fontsize=20)
+
+# Fine-tune figure; hide x ticks for upper plots:
+plt.setp(ax1.get_xticklabels(), visible=False)
+plt.setp(ax2.get_xticklabels(), visible=False)
+
+ax1.set_title('$b^{\\prime}/(fNL)$', fontsize=20)
+ax2.set_title('$p^{\\prime}/(f^2L^2)$', fontsize=20)
+
+ax3.set_xlabel('$x/L$', fontsize=20)
+ax4.set_xlabel('$x/L$', fontsize=20)
+ax1.set_ylabel('$y/L$', fontsize=20)
+ax3.set_ylabel('$Nz/fL$', fontsize=20)
+
+extent12=(-np.pi,np.pi,-np.pi,np.pi)
+extent34=(-np.pi,np.pi,-np.pi/2.0,0.0)
+
+# Plot the image in an array with an optional colourbar:
+im1=ax1.imshow(bb.T,cmap=cm.bwr,vmin=bbmin,vmax=bbmax,extent=extent12,origin='lower',interpolation='bilinear')
+cs1=ax1.contour(bb.T, clevels1, colors='k', extent=extent12, linewidths=1)
+cbar = ax1.cax.colorbar(im1, ticks=clevels1)
+cbar.add_lines(cs1)
+
+im2=ax2.imshow(pp.T,cmap=cm.bwr,vmin=ppmin,vmax=ppmax,extent=extent12,origin='lower',interpolation='bilinear')
+cs2=ax2.contour(pp.T, clevels2, colors='k', extent=extent12, linewidths=1)
+cbar = ax2.cax.colorbar(im2, ticks=clevels2)
+cbar.add_lines(cs2)
+
+im3=ax3.imshow(cbb.T,cmap=cm.bwr,vmin=bbmin,vmax=bbmax,extent=extent34,origin='lower',interpolation='bilinear')
+cs3=ax3.contour(cbb.T, clevels1, colors='k', extent=extent34, linewidths=1)
+cbar = ax3.cax.colorbar(im3, ticks=clevels1)
+cbar.add_lines(cs3)
+
+im4=ax4.imshow(cpp.T,cmap=cm.bwr,vmin=ppmin,vmax=ppmax,extent=extent34,origin='lower',interpolation='bilinear')
+cs4=ax4.contour(cpp.T, clevels2, colors='k', extent=extent34, linewidths=1)
+cbar = ax4.cax.colorbar(im4, ticks=clevels2)
+cbar.add_lines(cs4)
+
+#=========================================================================
+# Save image:
+fig.tight_layout()
+fig.savefig('bbpp.pdf', format='pdf', dpi=600, bbox_inches='tight')
+
+print()
+print(' To view the image, type')
+print()
+print(' ev bbpp.pdf &')
+print()

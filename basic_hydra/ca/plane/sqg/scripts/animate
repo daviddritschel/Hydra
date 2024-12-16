@@ -58,17 +58,14 @@ ny=nx
 length=nx*ny+1
 frame_bytes=4*length
 
-prefix_in=input('File prefix (before .r4, default qq)? ')
-prefix=str(prefix_in or 'qq')
+prefix=str(raw_input('File prefix (before .r4, default qq)? ') or 'qq')
 dataset=prefix+'.r4'
 
 # Get final frame from chosen dataset:
-record2_def=os.path.getsize(dataset)/frame_bytes-1
+record2=os.path.getsize(dataset)/frame_bytes-1
 
-record1_in=input(' First record to read (default 0)? ')
-record1=int(record1_in or 0)
-record2_in=input(' Last record to read (default '+str(record2_def)+')? '))
-record2=int(record2_in or record2_def)
+record1=int(raw_input('First record to read (default 0)? ') or 0)
+record2=int(raw_input(' Last record to read (default '+str(record2)+')? ') or record2)
 
 # Set up figure:
 fig = plt.figure(1,figsize=[width,width])
@@ -97,7 +94,7 @@ with open(dataset,'r') as file:
       raw_array=np.frombuffer(bytes, dtype=np.float32).copy()
 
       t=float(raw_array[0])
-      print( ' t = ',t)
+      print ' t = ',t
 
       Z=np.empty((nx+1,ny+1))
       Z[0:nx,0:ny]=raw_array[1:nx*ny+1].reshape(nx,ny)
@@ -119,12 +116,12 @@ with open(dataset,'r') as file:
 ani = anim.ArtistAnimation(fig, ims, interval=200, repeat_delay=2000, blit=False)
 
 movie_file=prefix+str(record1)+'-'+str(record2)+'.mp4'
-print()
-print( ' Creating movie ('+movie_file+') ... (this can take some time)')
+print
+print ' Creating movie ('+movie_file+') ... (this can take some time)'
 ani.save(movie_file, fps=10, extra_args=['-vcodec', 'libx264'])
 
-print()
-print( ' Display the movie by typing')
-print()
-print( ' mplayer '+movie_file+' -loop 0')
-print()
+print
+print ' Display the movie by typing'
+print
+print ' mplayer '+movie_file+' -loop 0'
+print

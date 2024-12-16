@@ -5,15 +5,17 @@ use constants
 use variables
 use contours
 use spectral
-use generic
 
  !Define quantities to be preserved between recontouring and evolution:
 
  !buoyancy residue:
 double precision:: qr(ny,nx)
 
- !Spectral prognostic fields (note array order):
-double precision:: qs(nx,ny)
+ !Spectral prognostic field (note array order):
+double precision:: qs(nx,ny),qspre(nx,ny)
+
+ !tracer (if present):
+double precision,allocatable,dimension(:,:):: cs,cspre
 
  !Time stepping parameters:
 double precision:: dtmax,tfin,tgrid

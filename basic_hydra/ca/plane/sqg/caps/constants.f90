@@ -58,4 +58,7 @@ double precision,parameter:: glx=ellx/dble(nx),glxi=dble(nx)/ellx
 double precision,parameter:: gly=elly/dble(ny),glyi=dble(ny)/elly
 double precision,parameter:: garea=glx*gly,dsumi=one/dble(nx*ny)
 
+ !Control parameters:
+logical,parameter:: tracer=(kappa > zero)
+
 end module

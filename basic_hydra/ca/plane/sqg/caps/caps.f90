@@ -9,13 +9,17 @@
 
 !             Dq/Dt = 0
 
-!          where q is the surface buoyancy.  
+!          where q = -b_0/N; here b_0 is the surface buoyancy and
+!          N is the uniform buoyancy frequency.
 
 !          The velocity field (u,v) is found by 
 
 !             u = -dpsi/dy ; v = dpsi/dx                   
 
-!          where in spectral space psi_hat = -q_hat/|k|.
+!          where in spectral space psi_hat = -q_hat*cosh(K*D)/(K*sinh(KD))
+!          where K is the wavenumber magnitude and D = NH/f is the scaled
+!          depth.  Note, 1/D is specified in parameters.f90 so that the
+!          conventional limit D -> infinity can be studied.
 
 !          We split the buoyancy evolution equation into *three* equations,
 
@@ -44,6 +48,8 @@
 !          re-contoured so that the accumulated forcing in q_d is
 !          given to the contours in q_c (to the extent possible).
 
+!          The fields of b_0/N and zeta are output to bb.r4 & zz.r4.
+
 !     The full algorithm consists of the following modules:
 !        casl.f90      : This source - main program loop, repeats successive 
 !                        calls to evolve fields and recontour;
@@ -54,7 +60,6 @@
 !                        (through recontouring--evolution cycle);
 !        spectral.f90  : Fourier transform common storage and routines;
 !        contours.f90  : Contour advection common storage and routines;
-!        generic.f90   : Generic service routines for CASL;
 !        congen.f90    : Source code for contour-to-grid conversion;
 !        evolution.f90 : Main time evolution module - advects gridded 
 !                        fields using a PS method along with contours.
@@ -99,12 +104,11 @@ subroutine initialise
 ! Routine initialises fixed constants and arrays, and reads in
 ! input files, opens output files ready for writing to. 
 
-implicit double precision(a-h,o-z)
-implicit integer(i-n)
+implicit none
 
  !Local variables:
 double precision:: ff(ny,nx)
-integer:: ix,iy,kx,ky
+integer:: itime
 
 !--------------------------------------------------
  !Call initialisation routines from modules:
@@ -117,26 +121,41 @@ call init_contours
 !-----------------------------------------------------------------
  !Read in full buoyancy and convert to spectral space:
 open(11,file='qq_init.r8',form='unformatted', &
-    & access='direct',status='old',recl=2*nbytes)
+      access='direct',status='old',recl=2*nbytes)
 read(11,rec=1) t,qr
 close(11)
 
  !Choose contour interval based on range of buoyancy values:
-call contint(qr,ncontq,qjump)
+qjump=(maxval(qr)-minval(qr))/dble(ncontq)
 write(*,*)
 write(*,'(a,1x,f13.8)') ' qjump = ',qjump
 
- !Copy qr into ff before taking Fourier transform (ff is overwritten):
-do ix=1,nx
-  do iy=1,ny
-    ff(iy,ix)=qr(iy,ix)
-  enddo
-enddo
  !Convert buoyancy anomaly (in ff) to spectral space as qs:
+ff=qr
 call ptospc(nx,ny,ff,qs,xfactors,yfactors,xtrig,ytrig)
 
+!-----------------------------------------------------------------
+if (tracer) then
+   !Read in a tracer field (optionally):
+   open(11,file='cc_init.r8',form='unformatted', &
+        access='direct',status='old',recl=2*nbytes)
+   read(11,rec=1) t,ff
+   close(11)
+
+   !Allocate memory for field in spectral space:
+   allocate(cs(nx,ny),cspre(nx,ny))
+
+   !Convert tracer field (in ff) to spectral space as cs:
+   call ptospc(nx,ny,ff,cs,xfactors,yfactors,xtrig,ytrig)
+
+   !Open files to save field evolution and spectra:
+   open(33,file='cc.r4',form='unformatted',access='direct', &
+                      status='replace',recl=nbytes)
+   open(53,file='spectra/cspec.asc',status='replace')
+endif
+
 !------------------------------------------------------------
- !Initially there are no contours:
+ !Initially there are no buoyancy contours:
 nq=0
 nptq=0
 
@@ -151,20 +170,23 @@ tfin=tgrid+tsim
 !--------------------------------------
  !Open all plain text diagnostic files:
 open(14,file='complexity.asc',status='unknown')
-open(15,file='ene.asc',status='unknown')
+open(15,file='ene-ens.asc',status='unknown')
 open(17,file='monitor.asc',status='unknown')
 
- !Open file for 1d buoyancy spectra:
-open(51,file='spectra.asc',status='unknown')
+ !Open files for 1d spectra:
+open(51,file='spectra/bspec.asc',status='replace')
+open(52,file='spectra/zspec.asc',status='replace')
 
- !Open files for coarse grid saves:
-open(31,file='qq.r4',form='unformatted',access='direct', &
-                 & status='replace',recl=nbytes)
+ !Open files for coarse grid saves of b_0/N and zeta:
+open(31,file='bb.r4',form='unformatted',access='direct', &
+                   status='replace',recl=nbytes)
+open(32,file='zz.r4',form='unformatted',access='direct', &
+                   status='replace',recl=nbytes)
 
  !Open files for contour writes:
 open(80,file='cont/qqsynopsis.asc',status='unknown')
 open(83,file='cont/qqresi.r4',form='unformatted',access='direct', &
-                          & status='replace',recl=nbytes)
+                            status='replace',recl=nbytes)
 
  !Initialise counter for writing direct files to the correct counter:
 igrids=0
@@ -216,7 +238,11 @@ close(14)
 close(15)
 close(17)
 close(31)
+close(32)
+if (tracer) close(33)
 close(51)
+close(52)
+if (tracer) close(53)
 close(80)
 close(83)
 

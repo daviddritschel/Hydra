@@ -1,0 +1,118 @@
+#!/usr/bin/env python
+
+# This script computes and plots min, max and rms zeta from data in zz.r4
+# It also reads max|grad{b}| from froude.asc, previously computed by
+# src/post/froude.f90.
+
+#     @@@@   Run from the current job directory   @@@@
+
+#========== Perform the generic imports =========
+import sys,os,warnings
+import numpy as np
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.artist import setp
+import matplotlib.cm as cm
+import matplotlib as mpl
+from matplotlib import rcParams
+from matplotlib import rc
+rcParams.update({'figure.autolayout': True})
+warnings.simplefilter("ignore",DeprecationWarning)
+
+# Ensure latex fonts throughout:
+rc('font', **{'family': 'Times New Roman'})
+rc('text', usetex=True)
+
+# set tick label size:
+label_size = 20
+mpl.rcParams['xtick.labelsize'] = label_size
+mpl.rcParams['ytick.labelsize'] = label_size
+# set x tick width and size:
+mpl.rcParams['xtick.major.size'] = 5
+mpl.rcParams['xtick.major.width'] = 2
+mpl.rcParams['xtick.minor.size'] = 3
+mpl.rcParams['xtick.minor.width'] = 1
+# set y tick width and size:
+mpl.rcParams['ytick.major.size'] = 5
+mpl.rcParams['ytick.major.width'] = 2
+mpl.rcParams['ytick.minor.size'] = 3
+mpl.rcParams['ytick.minor.width'] = 1
+# set axes width:
+mpl.rcParams['axes.linewidth'] = 1
+
+def get_ny():
+    # This routine reads the src/parameters.f90 file
+    # to obtain the vertical resolution of the run ny.
+    # This is done by using a simple regexp.
+    # It returns an integer with value ny.
+
+    import re
+
+    # Open input file:
+    try:
+        in_file = open('src/parameters.f90','r')# try opening filename  
+    except IOError:
+        print(' File could not be opened')
+        sys.exit()
+    # Read the file into a list of strings and close it:
+    param_file=in_file.readlines()
+    in_file.close()
+
+    # Make a list of all strings matching the given regexp: 
+    comprehend=[]
+    for line in param_file:
+        comprehend.append(re.findall('(?<=ny=)\d+',line))
+        # Trim the list, select an element, convert to integer and return it.
+        comprehend=[comp for comp in comprehend if comp!=[]]
+    return int(comprehend[0][0])
+
+#=================================================================
+# Read maximum Froude number:
+in_file=open('froude.asc','r')
+time, frmax = np.loadtxt(in_file,dtype=float,unpack=True)
+in_file.close()
+
+# Open and vorticity data file:
+in_file=open('zz.r4','r')
+raw_array=np.fromfile(in_file,dtype=np.float32)
+in_file.close()
+
+ng=get_ny()
+N=ng*ng
+
+nf = len(time)
+zmin = np.empty(nf)
+zmax = np.empty(nf)
+zrms = np.empty(nf)
+
+print()
+for j in range(nf):
+    z=raw_array[j*(N+1)+1:(j+1)*(N+1)].reshape(ng,ng).T
+    zmin[j] = -np.amin(z)
+    zmax[j] = np.amax(z)
+    zrms[j] = np.sqrt(np.sum(z**2)/float(N))
+    print(' t =',f'{time[j]:5.1f}',' zeta_min/f =',f'{-zmin[j]:10.5f}',' zeta_max/f =',f'{zmax[j]:9.5f}')
+
+# Set up figure:
+fig = plt.figure(1,figsize=[10,5])
+ax1 = fig.add_subplot(111)
+ax1.set_yscale('log')
+
+ax1.set_xlabel('$\\alpha t$', fontsize=20)
+ax1.set_ylabel('$\zeta_{\mathsf{rms}}\,,~\zeta_{\mathsf{max}}\,,~\zeta_{\mathsf{min}}$', fontsize=20)
+
+ax1.plot(time,zrms,c='k',lw=2,label='$\zeta_{\mathsf{rms}}/(\\alpha f)$')
+ax1.plot(time,zmax,c='r',lw=2,label='$\zeta_{\mathsf{max}}/(\\alpha f)$')
+ax1.plot(time,zmin,c='b',lw=2,label='$-\zeta_{\mathsf{min}}/(\\alpha f)$')
+ax1.plot(time,frmax,c='m',lw=2,label='$|\\nabla\\tilde{b}|_{\mathsf{max}}/\\alpha$')
+
+ax1.legend(loc='upper left',prop={'size':18}, shadow=True)
+
+fig.savefig('norms.png', format='png', dpi=600)
+
+print()
+print(' To display the results, type:')
+print()
+print(' eom norms.png &')
+print()

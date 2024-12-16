@@ -8,7 +8,6 @@ module congen
 ! D G Dritschel on 18 June 2012 @ Moscow
 
 use common
-use generic
 
 implicit none
 
@@ -63,7 +62,7 @@ if (nq .gt. 0) then
 else
 
    !Check if field requires contouring by computing l1 norm of qq:
-  call l1norm(qq,qql1)
+  qql1=garea*sum(abs(qq))
   if (qql1 .lt. small) return
 
    !No contours: interpolate qq (which here contains the full field)

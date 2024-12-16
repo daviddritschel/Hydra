@@ -1,0 +1,45 @@
+#!/usr/bin/env csh
+
+#============================================================================#
+# Job setup script for an elliptical vortex with
+# b_0/N = (1 - s)^p where s = (x/x_0)^2 + (y/y_0)^2
+#  *** Use p = 0 for the Gaussian b_0/N = e^{-s^2}.
+#============================================================================#
+set datagen = "eddy"
+
+# Data generation routine specific parameters:
+set p =  "0.5"      # Power, see comment above
+set x0 = "1.5"      # Half-width of eddy in x
+set y0 = "0.6"      # Half-width of eddy in y
+
+#==========================================================================
+echo ' We take b_0/N = (1 - s)^p where s = (x/x_0)^2 + (y/y_0)^2'
+echo ' for s < 1, and b_0/N = 0 otherwise. *** Use p = 0 to instead'
+echo ' take b_0/N = e^{-s}.'
+
+echo
+echo -n ' Power, p (default' $p')? '
+set var=$<
+if ($var != "") set x0=$var
+
+echo -n ' Half-width of the eddy, x_0 (default' $x0')? '
+set var=$<
+if ($var != "") set x0=$var
+
+echo -n ' Half-height of the eddy, y_0 (default' $y0')? '
+set var=$<
+if ($var != "") set y0=$var
+
+echo ' b_0/N = (1 - s)^p where s = (x/x_0)^2 + (y/y_0)^2' >> job_info
+echo ' for s < 1, and b_0/N = 0 otherwise.' >> job_info
+echo ' *** If p = 0, instead b_0/N = e^{-s}.' >> job_info
+echo ' ' >> job_info
+echo '  Power, p:                          ' $p >> job_info
+echo '  Half-width,  x_0:                  ' $x0 >> job_info
+echo '  Half-height, y_0:                  ' $x0 >> job_info
+
+cat << /EOF > in_$datagen
+$p $x0 $y0
+/EOF
+
+$datagen < in_$datagen > out_$datagen

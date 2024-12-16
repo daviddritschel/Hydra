@@ -23,11 +23,18 @@ double precision,parameter:: tgsave=T_GSAVE,tcsave=T_CSAVE
 
 !***Physical parameters:***
 double precision,parameter:: ellx=L_X,elly=L_Y
+double precision,parameter:: depth=L_Z
 double precision,parameter:: cdamp=C_DAMP,nnu=POW_HYPER
+double precision,parameter:: kappa=T_DIFF,dcdx=DC_DX,dcdy=DC_DY
 ! ellx   : domain width in x (periodic, centred at 0)
 ! elly   : domain width in y (periodic, centred at 0)
+! depth  : N*H/f, the scaled depth
 ! cdamp  : this times |zeta|_rms*(k/k_max)^(2*nnu) is the hyperdiffusivity 
 !          coefficient, where nnu is the power specified above
+! kappa  : if > 0, allows diffusive evolution of a tracer field;
+!          then kappa is the diffusivity
+! dcdx   : Mean value of tracer gradient dc/dx
+! dcdy   : Mean value of tracer gradient dc/dy
 !----------------------------------------------------------------
 
 end module

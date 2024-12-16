@@ -1,0 +1,104 @@
+#!/usr/bin/env python
+
+# This script plots the results of post/area.f90
+
+#     @@@@   Run from the current job directory   @@@@
+
+#========== Perform the generic imports =========
+import sys,os,warnings
+import numpy as np
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.artist import setp
+import matplotlib.cm as cm
+import matplotlib as mpl
+from matplotlib import rcParams
+from matplotlib import rc
+rcParams.update({'figure.autolayout': True})
+warnings.simplefilter("ignore",DeprecationWarning)
+
+# Ensure latex fonts throughout:
+rc('font', **{'family': 'Times New Roman'})
+rc('text', usetex=True)
+
+# set tick label size:
+label_size = 20
+mpl.rcParams['xtick.labelsize'] = label_size
+mpl.rcParams['ytick.labelsize'] = label_size
+# set x tick width and size:
+mpl.rcParams['xtick.major.size'] = 5
+mpl.rcParams['xtick.major.width'] = 2
+mpl.rcParams['xtick.minor.size'] = 3
+mpl.rcParams['xtick.minor.width'] = 1
+# set y tick width and size:
+mpl.rcParams['ytick.major.size'] = 5
+mpl.rcParams['ytick.major.width'] = 2
+mpl.rcParams['ytick.minor.size'] = 3
+mpl.rcParams['ytick.minor.width'] = 1
+# set axes width:
+mpl.rcParams['axes.linewidth'] = 1
+
+#=================================================================
+print(' This script plots one or more files of the form areannn.asc')
+print(' where nnn is the file index (see post/area.f90).')
+print()
+nd = 0
+dlist = []
+index = 1
+while index != 0:
+    q_in = input(' File index to plot? (enter 0 if finished) ')
+    index = int(q_in or 0)
+    if index == 0:
+        break
+    nd += 1
+    dlist.append(index)
+
+dlist = np.array(dlist)
+
+# Convert integers to strings of the form "nnn":
+flist = []
+for j in range(nd):
+    index=dlist[j]
+    if int(index/10) == 0:
+        flist.append('00'+str(index))
+    elif int(index/100) == 0:
+        flist.append('0'+str(index))
+    else:
+        flist.append(str(index))
+
+# Read average buoyancy to remove below:
+data_file = open('average_qq.asc','r')
+bavg = float(data_file.readline())
+data_file.close()
+
+#-----------------------------------------------------------------------
+# Set up figure:
+fig = plt.figure(1,figsize=[10,5])
+ax1 = fig.add_subplot(111)
+
+ax1.set_xlabel('$b$', fontsize=20)
+ax1.set_ylabel('$A$', fontsize=20)
+
+# Read and plot data:
+col=['k','b','r','c','m','g','y']
+for j in range(nd):
+    frame = flist[j]
+    # read in data for this frame:
+    in_file = open('area'+frame+'.asc','r')
+    b, A = np.loadtxt(in_file, dtype=float, unpack=True)
+    in_file.close()
+
+    b = b + bavg
+    ax1.plot(b, A, c=col[j], lw=2, label='frame '+str(dlist[j]))
+
+ax1.axvline(0.0, color='m', linestyle='--')
+ax1.legend(loc='upper right',prop={'size':18}, shadow=True)
+
+fig.savefig('area.png', format='png', dpi=600)
+
+print()
+print(' To display the results, type:')
+print()
+print(' eom area.png &')
+print()

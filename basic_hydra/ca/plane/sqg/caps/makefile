@@ -5,9 +5,9 @@ installdir = ..
 
  # Set main source and object files:
 sources = $(sourcedir)/parameters.f90 $(sourcedir)/constants.f90 $(sourcedir)/variables.f90 $(sourcedir)/spectral.f90 \
-          $(sourcedir)/generic.f90 $(sourcedir)/contours.f90 $(sourcedir)/common.f90 $(sourcedir)/evolution.f90 #Main f90 sources
+          $(sourcedir)/contours.f90 $(sourcedir)/common.f90 $(sourcedir)/evolution.f90 #Main f90 sources
 objects = parameters.o constants.o variables.o spectral.o \
-          generic.o contours.o common.o evolution.o #Main .o files 
+          contours.o common.o evolution.o #Main .o files 
 
  # Set location of fft library:
 fft_lib = ~/hydra/lib/stafft/stafft.f90 ~/hydra/lib/stafft/sta2dfft.f90 
@@ -36,6 +36,7 @@ clean:
 setup:
 	test -d $(installdir)/cont || mkdir $(installdir)/cont
 	test -d $(installdir)/fine || mkdir $(installdir)/fine
+	test -d $(installdir)/spectra || mkdir $(installdir)/spectra
 
 install:
 	find -type f -perm /a+x -exec /bin/mv {} $(installdir)/ \;

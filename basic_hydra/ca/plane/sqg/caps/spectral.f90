@@ -13,6 +13,9 @@ double precision:: filt(nx,ny),flo(nx,ny),fhi(nx,ny)
 double precision:: rkx(nx),hrkx(nx)
 double precision:: rky(ny),hrky(ny)
 
+ !For diffusing a tracer (optional):
+double precision,allocatable,dimension(:,:):: tdiss
+
 double precision:: xtrig(2*nx),ytrig(2*ny)
 integer:: xfactors(5),yfactors(5)
 
@@ -64,16 +67,24 @@ rkymax=scy*dble(nwy)
 
 !-----------------------------------------------------------------------
  !Define Green function:
+snorm=-two*depth
+do ky=1,ny
+  do kx=1,nx
+    fac=exp(snorm*sqrt(rkx(kx)**2+rky(ky)**2))
+    green(kx,ky)=(one+fac)/(one-fac)
+  enddo
+enddo
+
 green(1,1)=zero
 do kx=2,nx
-  green(kx,1)=-one/rkx(kx)
+  green(kx,1)=green(kx,1)/rkx(kx)
 enddo
 do ky=2,ny
-  green(1,ky)=-one/rky(ky)
+  green(1,ky)=green(1,ky)/rky(ky)
 enddo
 do ky=2,ny
   do kx=2,nx
-    green(kx,ky)=-one/sqrt(rkx(kx)**2+rky(ky)**2)
+    green(kx,ky)=green(kx,ky)/sqrt(rkx(kx)**2+rky(ky)**2)
   enddo
 enddo
 
@@ -104,6 +115,16 @@ do ky=1,ny
   enddo
 enddo
 
+if (tracer) then
+   !Define tracer diffusion operator:
+  allocate(tdiss(nx,ny))
+  do ky=1,ny
+    do kx=1,nx
+      tdiss(kx,ky)=kappa*(rkx(kx)**2+rky(ky)**2)
+    enddo
+  enddo
+endif
+
 !-----------------------------------------------------------------------
  !Initialise arrays for computing the spectrum of any field:
 delk=sqrt(scx*scy)
@@ -132,7 +153,7 @@ enddo
 kmaxred=nint(sqrt((rkxmax**2+rkymax**2)/two)*delki)
 
 return 
-end subroutine
+end subroutine init_spectral
 
 !=========================================
 subroutine main_invert(qq,uu,vv,pp)
@@ -146,17 +167,12 @@ implicit none
 double precision:: qq(nx,ny),pp(nx,ny) !Spectral
 double precision:: uu(ny,nx),vv(ny,nx) !Physical
 
- !Local variables:
-double precision:: vtmp(nx,ny)
-integer:: ix,iy,kx,ky
+ !Local variable:
+double precision:: vtmp(nx,ny) !Spectral
 
 !--------------------------------
  !Solve for psi (pp):
-do ky=1,ny
-  do kx=1,nx
-    pp(kx,ky)=green(kx,ky)*qq(kx,ky)
-  enddo
-enddo
+pp=green*qq
 
  !Get velocity field:
 call xderiv(nx,ny,hrkx,pp,vtmp)
@@ -165,15 +181,11 @@ call spctop(nx,ny,vtmp,vv,xfactors,yfactors,xtrig,ytrig)
 call yderiv(nx,ny,hrky,pp,vtmp)
 call spctop(nx,ny,vtmp,uu,xfactors,yfactors,xtrig,ytrig)
 
- !Copy -uu into uu:
-do ix=1,nx
-  do iy=1,ny
-    uu(iy,ix)=-uu(iy,ix)
-  enddo
-enddo
+ !Switch sign of uu:
+uu=-uu
 
 return
-end subroutine
+end subroutine main_invert
 
 !=================================================================
 subroutine gradient(ff,ffx,ffy)
@@ -197,35 +209,23 @@ call yderiv(nx,ny,hrky,ff,vtmp)
 call spctop(nx,ny,vtmp,ffy,xfactors,yfactors,xtrig,ytrig)
 
 return
-end subroutine
+end subroutine gradient
 
 !===================================================================
 
-subroutine spec1d(ss,spec,iopt)
+subroutine spec1d(ss,spec)
 ! Computes the 1d spectrum of a spectral field ss and returns the
 ! result in spec.
-! If iopt = 1, the spectral field is multiplied first by K^2
-!              and is returned modified!
 
 implicit none
 
  !Passed variables:
 double precision:: ss(nx,ny),spec(0:max(nx,ny))
-integer:: iopt
 
  !Local variables:
 integer:: kx,ky,k
 
 !--------------------------------------------------------
-if (iopt .eq. 1) then
-   !Multiply spectral field by K^2 (filtered, see init_spectral):
-  do ky=1,ny
-    do kx=1,nx
-      ss(kx,ky)=ss(kx,ky)*rksq(kx,ky)
-    enddo
-  enddo
-endif
-
 do k=0,kmax
   spec(k)=zero
 enddo
@@ -255,8 +255,8 @@ do ky=2,ny
 enddo
 
 return
-end subroutine
+end subroutine spec1d
 
 !===================================================================
 
-end module     
+end module spectral

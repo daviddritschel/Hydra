@@ -99,9 +99,9 @@ def main():
 
     # Set hold status
     if args.hold: 
-      fig = plt.figure(1,figsize=figure_size)
-      ax = fig.add_subplot(111)
       if fnumber == 0:
+        fig = plt.figure(1,figsize=figure_size)
+        ax = fig.add_subplot(111)
         ax.set_prop_cycle(cycler('color',args.ccycle))
       for i,column in enumerate(main_array):
         ax.plot(x,column,symbol)
@@ -111,9 +111,9 @@ def main():
         ax.set_ylim(args.ylim)
     else:
       for i,column in enumerate(main_array):
-        fig = plt.figure(i+1,figsize=figure_size)
-        ax = fig.add_subplot(111)
         if fnumber == 0:
+          fig = plt.figure(i+1,figsize=figure_size)
+          ax = fig.add_subplot(111)
           ax.set_prop_cycle(cycler('color',args.ccycle))
 #          ax.set_color_cycle(args.ccycle)
         ax.plot(x,column,symbol)

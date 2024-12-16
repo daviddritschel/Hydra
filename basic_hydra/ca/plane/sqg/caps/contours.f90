@@ -5,7 +5,6 @@ module contours
 
 use constants
 use variables
-use generic
 
 implicit none
 
