@@ -12,6 +12,9 @@ conprint: $(objects) $(sourcedir)/post/conprint.f90
 area: $(objects) $(sourcedir)/post/area.f90
 	$(f90) parameters.o constants.o $(sourcedir)/post/area.f90 -o area $(flags)
 
+extract: $(objects) $(sourcedir)/post/extract.f90
+	$(f90) parameters.o constants.o $(sourcedir)/post/extract.f90 -o extract $(flags)
+
 genfg: $(objects) $(sourcedir)/congen.f90 $(sourcedir)/post/genfg.f90
 	$(f90) parameters.o constants.o contours.o $(sourcedir)/congen.f90 $(sourcedir)/post/genfg.f90 -o genfg $(flags) 
 

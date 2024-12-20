@@ -1,0 +1,185 @@
+#!/bin/csh
+
+#=========================================================================#
+# Grafts a new simulation from an old one.  Takes a specific time from the
+# old one as the starting time for the new one, and allows one to modify
+# the simulation time and data save frequency for the new simulation.
+
+# This must be run from the job directory of the old simulation.
+#=========================================================================#
+
+# Work out the final time of the old simulation:
+set dum = `tail -1 ene-ens.asc`
+set tsim_ori = $dum[1]
+
+echo
+echo ' ==============================================================='
+echo ' This script creates a series of nearly identical subdirectories'
+echo ' differing only in the location of the initial tracer anomaly.'
+echo ' ==============================================================='
+echo
+echo ' The final time reached by the old simulation is ' $tsim_ori
+
+# Time interval between grid saves:
+set dum = `grep tgsave src/parameters.f90 | awk -F= '{print $(NF-1)}' | awk -F"d0" '{print $(NF-1)}'`
+set tgsave_ori=`echo $dum[1] | sed -E 's/(d0,tcsave)+$//'`
+
+echo ' The time interval between gridded data saves is ' $tgsave_ori
+
+echo
+echo ' The new simulation will start with data at time t in the old simulation.'
+echo -n ' Enter t (default' $tsim_ori')? '
+set t=$<
+if ($t == "") set t=$tsim_ori
+echo ' (This will be t = 0 in the new simulation.)'
+
+# Get the value of tsim_ori in the parameter file for replacement below:
+set dum = `grep tsim src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set tsim_ori = $dum[1]
+
+set tsim_def=`echo "2 * $tgsave_ori" | bc -l`
+echo
+echo -n ' Duration (maximum time) of new simulation (default' $tsim_def')? '
+set tsim=$<
+if ($tsim == "") set tsim=$tsim_def
+
+set tgsave_def=`echo "0.1 * $tsim" | bc -l`
+echo -n ' Time interval between data saves (default' $tgsave_def')? '
+set tgsave=$<
+if ($tgsave == "") set tgsave=$tgsave_def
+
+# Time interval between contour saves in original simulation:
+set dum = `grep tcsave src/parameters.f90 | awk -F= '{print $(NF)}' | awk -F"d0" '{print $(NF-1)}'`
+set tcsave_ori = $dum[1]
+
+# Get resolution in x & y:
+set nx = `grep "nx=" src/parameters.f90 | awk -F= '{print $(NF-1)}' | awk -F, '{print $1}'`
+set ny = `grep "ny=" src/parameters.f90 | awk -F= '{print $(NF)}'`
+
+# Extract data from old simulation:
+cat << /EOF > in_extract
+$t
+/EOF
+extract < in_extract > out_extract
+/bin/rm in_extract out_extract
+
+# Create subdirectory for all of the new simulations:
+echo
+set rdir="t"{$t}"_restart"
+if (-d $rdir) then
+   echo ' The subdirectory t'{$t}'_restart already exists!'
+   echo -n ' Do you want to replace it (y/n, default: y)? '
+   set opt=$<
+   if ($opt != "n") then
+      /bin/rm -r $rdir
+      mkdir $rdir
+   else
+      echo ' *** Exiting!'
+      exit(-1)
+   endif
+else
+   mkdir $rdir
+endif
+
+# Make a subdirectory and a base directory within it:
+cd $rdir
+mkdir base
+cp ../qq_extract.r8 base/qq_init.r8
+cp ../average_qq.asc base
+cp ../sv base
+cp ../dv base
+cp ../ddv base
+cp ../pevo base
+cp ../init_tracer base
+cp -r ../src base
+cd base
+mkdir fine
+mkdir cont
+mkdir spectra
+
+# Change the parameter file:
+cd src
+sed s/tsim=$tsim_ori/tsim=$tsim/ parameters.f90 > junk
+mv junk parameters.f90
+sed s/tgsave=$tgsave_ori/tgsave=$tgsave/ parameters.f90 > junk
+mv junk parameters.f90
+sed s/tcsave=$tcsave_ori/tcsave=$tsim/ parameters.f90 > junk
+mv junk parameters.f90
+
+# Re-make caps:
+echo
+echo ' -------------------------------------------------------------------'
+echo ' Re-compiling caps...'
+make caps clean install
+cd ../..
+
+# For running jobs below in "batch" mode:
+alias bat '(  nice +19 nohup time \!:2-$ ) >&\! \!^ &'
+
+# Make a collection of subdirectories:
+echo ' -------------------------------------------------------------------'
+echo
+echo ' A series of new simulation directories will now be built where each'
+echo ' is identical except for the grid point (ix,iy) where the initial'
+echo ' tracer anomaly is non-zero.'
+echo
+echo ' The grid point is chosen from a regular M x M lattice, with an effort'
+echo ' to equally distribute the values of (ix,iy).'
+echo
+
+set mm=4
+echo -n ' Enter M (default' $mm'): '
+set var=$<
+if ($var != "") set mm=$var
+
+set camp="0.2"
+echo ' The tracer anomaly c''(x,y,0) = A*delta(x,y) spread over 1 grid point.'
+echo -n ' Enter the amplitude A (default' $camp'): '
+set var=$<
+if ($var != "") set camp=$var
+
+# Set up all directories:
+@ nx2 = ( $nx / 2 )
+@ ny2 = ( $ny / 2 )
+
+set idir=0
+set jy=0
+while ( $jy < $mm )
+   @ jy++
+   @ iy = ( ( ( 2 * $jy - 1 ) * $ny2 ) / $mm )
+   set jx=0
+   while ( $jx < $mm )
+      @ jx++
+      @ ix = ( ( ( 2 * $jx - 1 ) * $nx2 ) / $mm )
+
+      @ idir++
+
+      @ p1 = ( $idir / 100 )
+      @ jr = ( $idir - ( 100 * $p1 ) )
+      @ p2 = ( $jr / 10 )
+      @ p3 = ( $jr - ( 10 * $p2 ) )
+
+      set rundir="r"{$p1}{$p2}{$p3}
+      cp -r base $rundir
+
+      cd $rundir
+      cat << /EOF > in_tracer
+$camp
+$ix $iy
+/EOF
+      init_tracer < in_tracer > out_tracer
+      # Launch the simulation as a batch job:
+      echo ' Launching simulation in '{$rdir}'/'{$rundir}
+      bat log caps
+      cd ..
+   end
+end
+
+# Clean up - remove base directory:
+/bin/rm -r base
+
+echo
+echo ' The subdirectories '{$rdir}'/r001, '{$rdir}'/r002, etc contain'
+echo ' all the data required.  Just run caps in each subdirectory.'
+
+exit(-1)

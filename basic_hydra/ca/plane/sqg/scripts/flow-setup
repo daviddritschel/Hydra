@@ -223,32 +223,37 @@ if ($tracer != "n") then
     set glx=`echo "$ellx / $nx" | bc -l`
     set kappa=`echo "$alpha * $glx *$glx" | bc -l`
 
+    set dcdy="1.0"
+    echo -n ' Mean tracer gradient in y, dc/dy (default' $dcdy'): '
+    set var=$<
+    if ($var != "") set dcdy=$var
+
+    set dcdx="0.0"
+    echo -n ' Mean tracer gradient in x, dc/dx (default' $dcdx'): '
+    set var=$<
+    if ($var != "") set dcdx=$var
+
     set camp="0.0"
-    echo ' The tracer anomaly c(x,y,0) = A*sin(2*pi*x/L_x)*sin(2*pi*y/L_y).'
+    echo ' The tracer anomaly c''(x,y,0) = A*delta(x,y) spread over 1 grid point.'
     echo -n ' Enter the amplitude A (default' $camp'): '
     set var=$<
     if ($var != "") set camp=$var
 
-    if ($camp == "0.0") then
-        set dcdx="1.0"
-    else
-        set dcdx="0.0"
-    endif
-    echo -n ' Mean tracer gradient dc/dx (default' $dcdx'): '
-    set var=$<
-    if ($var != "") set dcdx=$var
+    if ($camp != "0.0") then
+        @ ix = ( $nx / 2 + 1 )
+        echo -n ' Enter the x grid point (default' $ix'): '
+        set var=$<
+        if ($var != "") set ix=$var
 
-    if ($camp == "0.0" && $dcdx == "0.0") then
-        set dcdy="1.0"
-    else
-        set dcdy="0.0"
+        @ iy = ( $ny / 2 + 1 )
+        echo -n ' Enter the y grid point (default' $iy'): '
+        set var=$<
+        if ($var != "") set iy=$var
     endif
-    echo -n ' Mean tracer gradient dc/dy (default' $dcdy'): '
-    set var=$<
-    if ($var != "") set dcdy=$var
 
     echo ' Tracer diffusivity, kappa:          ' $kappa >> job_info
-    echo ' Amplitude of anomaly:               ' $camp >> job_info
+    echo ' The tracer anomaly c''(x,y,0) = A*delta(x,y) spread over 1 grid point' >> job_info
+    echo ' Pre-factor A:                       ' $camp >> job_info
     echo ' Mean value of dc/dx:                ' $dcdx >> job_info
     echo ' Mean value of dc/dy:                ' $dcdy >> job_info
     echo ' ' >> job_info
@@ -296,6 +301,7 @@ if ($tracer != "n") then
 #   Optionally include a tracer field:
     cat << /EOF > in_tracer
 $camp
+$ix $iy
 /EOF
 
     init_tracer < in_tracer > out_tracer
@@ -350,6 +356,9 @@ set datadir=`pwd`
 /bin/cp $bindir/pnorms .
 /bin/cp $bindir/pbbpp .
 /bin/cp $bindir/pbbzz .
+
+# Copy script for creating new runs for investigating tracer variations:
+/bin/cp $bindir/graft .
 
 echo ' ' >> job_info
 echo ' Job directory:' >> job_info
